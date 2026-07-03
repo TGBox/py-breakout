@@ -1,0 +1,23 @@
+# settings.py
+
+# Fenster-Einstellungen
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+FPS = 60
+TITLE = "Breakout Clone"
+
+# Farben (R, G, B)
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+YELLOW = (255, 255, 0)
+DARK_GREY = (40, 40, 40)
+
+# Game States (Zustände)
+STATE_MENU = "MENU"
+STATE_PLAYING = "PLAYING"
+STATE_PAUSED = "PAUSED"
+STATE_GAME_OVER = "GAME_OVER"
+STATE_LEVEL_CLEARED = "LEVEL_CLEARED"
