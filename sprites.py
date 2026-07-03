@@ -129,50 +129,62 @@ class PowerUp(pygame.sprite.Sprite):
     def __init__(self, x, y, powerup_type):
         super().__init__()
         self.effect_type = powerup_type
-        self.size = 26  
+        self.size = 28  # Ein winziges bisschen größer für bessere Form-Erkennung
         
-        # UTILS: Ein kleiner Detektiv im Terminal. 
-        # Er zeigt dir beim Spielen exakt an, welche Strings deine game.py benutzt!
-        print(f"[PowerUp-Info] Ein Power-Up vom Typ '{self.effect_type}' ist gespawnt!")
+        # Detektiv-Log für das Terminal bleibt aktiv
+        print(f"[PowerUp-Info] Typ '{self.effect_type}' ist gespawnt!")
 
-        # ERWEITERTE CONFIG (Inklusive typischer negativer Effekte)
+        # CONFIG JETZT MIT ZUSÄTZLICHER "shape"-EIGENSCHAFT
         self.config = {
-            # --- Positive Effekte ---
-            "SLOW": {"color": (50, 150, 255), "char": "S"},
-            "slow": {"color": (50, 150, 255), "char": "S"},
-            "slow_time": {"color": (50, 150, 255), "char": "S"},
+            # --- POSITIVE EFFEKTE (Kreise) ---
+            "slow_time":     {"color": (50, 150, 255), "char": "S", "shape": "circle"},
+            "bigger_ball":     {"color": (50, 10, 50), "char": "B", "shape": "circle"},
+            "multiball":     {"color": (50, 230, 50),  "char": "M", "shape": "circle"},
+            "expand_paddle": {"color": (50, 200, 200), "char": "W", "shape": "circle"},
+            "piercing_shot":      {"color": (255, 215, 0),  "char": "P", "shape": "circle"},
             
-            "MULTIBALL": {"color": (50, 230, 50), "char": "M"},
-            "multiball": {"color": (50, 230, 50), "char": "M"},
-            
-            "expand_paddle": {"color": (50, 200, 200), "char": "W"}, # Wide
-            "WIDE": {"color": (50, 200, 200), "char": "W"},
-            
-            "PIERCING": {"color": (255, 215, 0), "char": "P"}, # Gold/Gelb für Piercing
-            "piercing_shot": {"color": (255, 215, 0), "char": "P"},
-            
-            # --- Negative Effekte (Hier vermute ich deine Bezeichnungen) ---
-            "shrink_paddle": {"color": (255, 50, 50), "char": "C"},  # C für Close/Schmal (Rot)
-            "SHRINK": {"color": (255, 50, 50), "char": "C"},
-            "narrow_paddle": {"color": (255, 50, 50), "char": "C"},
-            
-            "FAST": {"color": (255, 100, 0), "char": "F"},            # F für Fast/Schnell (Orange)
-            "fast": {"color": (255, 100, 0), "char": "F"},
-            "speed_time": {"color": (255, 100, 0), "char": "F"}
+            # --- NEGATIVE EFFEKTE (Dreiecke) ---
+            "shrink_paddle": {"color": (255, 50, 50),  "char": "C", "shape": "triangle"},
+            "speed_time":     {"color": (255, 100, 0),  "char": "F", "shape": "triangle"},
+            "smaller_ball":     {"color": (255, 150, 0),  "char": "S", "shape": "triangle"},
         }
         
-        # Holt sich die Config oder nutzt das graue Fragezeichen, falls es immer noch fehlt
-        cfg = self.config.get(self.effect_type, {"color": (130, 130, 130), "char": "?"})
+        # Fallback für Unbekanntes (wird als graues Viereck gezeichnet!)
+        cfg = self.config.get(self.effect_type, {"color": (130, 130, 130), "char": "?", "shape": "square"})
         
-        # Oberfläche und Zeichnung
         self.image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         radius = self.size // 2
-        pygame.draw.circle(self.image, cfg["color"], (radius, radius), radius)
-        pygame.draw.circle(self.image, (255, 255, 255), (radius, radius), radius, 2)
         
-        font = pygame.font.SysFont(None, 20, bold=True)
-        text_surf = font.render(cfg["char"], True, (0, 0, 0)) 
-        text_rect = text_surf.get_rect(center=(radius, radius))
+        # Schrifteinstellungen vorbereiten
+        font = pygame.font.SysFont(None, 18, bold=True)
+        text_surf = font.render(cfg["char"], True, (0, 0, 0))
+        
+        # =======================================================
+        # DYNAMISCHES ZEICHNEN JE NACH FORM
+        # =======================================================
+        if cfg["shape"] == "circle":
+            # Positiv: Runder Kreis
+            pygame.draw.circle(self.image, cfg["color"], (radius, radius), radius)
+            pygame.draw.circle(self.image, (255, 255, 255), (radius, radius), radius, 2)
+            text_rect = text_surf.get_rect(center=(radius, radius))
+            
+        elif cfg["shape"] == "triangle":
+            # Negativ: Gefahren-Dreieck (Spitze zeigt nach unten)
+            # Punkte: Oben-Links, Oben-Rechts, Unten-Mitte
+            points = [(2, 2), (self.size - 2, 2), (radius, self.size - 2)]
+            pygame.draw.polygon(self.image, cfg["color"], points)
+            pygame.draw.polygon(self.image, (255, 255, 255), points, 2) # Weißer Rahmen
+            
+            # Text-Zentrierung für Dreiecke (leicht nach oben verschoben, weil es unten eng wird)
+            text_rect = text_surf.get_rect(center=(radius, radius - 3))
+            
+        else:
+            # Fallback / Unbekannt: Quadrat (Graues Fragezeichen)
+            pygame.draw.rect(self.image, cfg["color"], (0, 0, self.size, self.size))
+            pygame.draw.rect(self.image, (255, 255, 255), (0, 0, self.size, self.size), 2)
+            text_rect = text_surf.get_rect(center=(radius, radius))
+
+        # Text auf das Power-Up blitten
         self.image.blit(text_surf, text_rect)
         
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
