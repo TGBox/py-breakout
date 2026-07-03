@@ -1,0 +1,173 @@
+# editor.py
+import pygame
+import sys
+import os
+from settings import *
+
+def get_level_name(lvl_nr: int) -> str:
+    """Method to take the level number int and convert it to the corresponding level file name.
+
+    Args:
+        lvl_nr (int): The current level number.
+
+    Returns:
+        str: The level file name for the given level number.
+    """
+    if lvl_nr <= 9:
+        return f"Level00{lvl_nr}.txt"
+    elif lvl_nr > 9 and lvl_nr <= 99:
+        return f"Level0{lvl_nr}.txt"
+    else: # lvl_nr > 99
+        return f"Level{lvl_nr}.txt"
+
+class LevelEditor:
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("Breakout - Level Editor")
+        self.clock = pygame.time.Clock()
+        
+        # Grid-Einstellungen (Passend zur LevelManager-Logik)
+        self.cols = 10
+        self.rows = 10  # Maximale vertikale Reihen für Blöcke
+        self.block_width = SCREEN_WIDTH // self.cols
+        self.block_height = 30
+        
+        # Leeres Raster initialisieren (0 = Leer)
+        self.grid = [["0" for _ in range(self.cols)] for _ in range(self.rows)]
+        
+        # Aktuell ausgewählter Block-Typ zum Platzieren
+        self.current_type = "1"
+        
+        # Definition der Block-Typen für die Darstellung im Editor
+        # Falls Farben wie BLUE oder BLACK nicht in deiner settings.py sind,
+        # nutzen wir hier feste RGB-Tuples als Fallback.
+        self.types = {
+            "0": {"color": (40, 40, 40), "label": "Radiergummi / Leer (Taste 0)"},
+            "1": {"color": WHITE, "label": "Normaler Block (Taste 1)"},
+            "2": {"color": (230, 70, 70), "label": "Starker Block (Taste 2)"},
+            "P": {"color": GREEN, "label": "PowerUp-Block (Taste P)"}
+        }
+        
+        self.font = pygame.font.SysFont(None, 22)
+        self.running = True
+
+    def run(self):
+        while self.running:
+            self.events()
+            self.draw()
+            self.clock.tick(60)
+
+    def events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+                
+                # Typen-Auswahl per Tastatur
+                if event.key == pygame.K_1: self.current_type = "1"
+                if event.key == pygame.K_2: self.current_type = "2"
+                if event.key == pygame.K_p: self.current_type = "P"
+                if event.key == pygame.K_0: self.current_type = "0"
+                
+                # Speichern auslösen
+                if event.key == pygame.K_s:
+                    self.save_level()
+
+        # Kontinuierliches Zeichnen bei gedrückter Maustaste erlauben
+        mouse_buttons = pygame.mouse.get_pressed()
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Prüfen, ob die Maus im oberen Grid-Bereich ist
+        grid_limit_y = self.rows * self.block_height
+        if mouse_pos[1] < grid_limit_y:
+            col = mouse_pos[0] // self.block_width
+            row = mouse_pos[1] // self.block_height
+            
+            if 0 <= col < self.cols and 0 <= row < self.rows:
+                if mouse_buttons[0]:    # Linksklick -> Block platzieren
+                    self.grid[row][col] = self.current_type
+                elif mouse_buttons[2]:  # Rechtsklick -> Block löschen
+                    self.grid[row][col] = "0"
+
+    def save_level(self):
+        # Ordner erstellen, falls er gelöscht wurde
+        if not os.path.exists("levels"):
+            os.makedirs("levels")
+            
+        # Dynamisch die nächste freie Level-Nummer ermitteln
+        level_num = 1
+        while os.path.exists(os.path.join("levels", get_level_name(level_num))):
+            level_num += 1
+            
+        filename = os.path.join("levels", get_level_name(level_num))
+        
+        try:
+            with open(filename, "w") as file:
+                for row in self.grid:
+                    line = "".join(row) + "\n"
+                    file.write(line)
+            print(f"[Editor] Level erfolgreich gespeichert unter: {filename}")
+            
+            # Visuelles Feedback auf dem Screen (kurz den Titel ändern)
+            pygame.display.set_caption(f"GESPEICHERT ALS {get_level_name(level_num)}!")
+        except Exception as e:
+            print(f"[Editor-Fehler] Konnte Level nicht schreiben: {e}")
+
+    def draw(self):
+        self.screen.fill(DARK_GREY)
+        
+        # 1. Das Raster und die gesetzten Blöcke zeichnen
+        for row in range(self.rows):
+            for col in range(self.cols):
+                block_type = self.grid[row][col]
+                color = self.types[block_type]["color"]
+                
+                # Ein Rechteck mit 2 Pixel Abstand für die Gitternetz-Optik
+                rect = pygame.Rect(col * self.block_width, row * self.block_height, 
+                                   self.block_width - 2, self.block_height - 2)
+                pygame.draw.rect(self.screen, color, rect)
+                
+                # Ein 'P' einzeichnen, damit man PowerUp-Blöcke sofort erkennt
+                if block_type == "P":
+                    p_txt = self.font.render("P", True, (0, 0, 0))
+                    self.screen.blit(p_txt, (rect.x + rect.width//2 - p_txt.get_width()//2, 
+                                             rect.y + rect.height//2 - p_txt.get_height()//2))
+
+        # Trennlinie zwischen Editor-Grid und UI-Steuerung
+        pygame.draw.line(self.screen, WHITE, (0, self.rows * self.block_height), 
+                         (SCREEN_WIDTH, self.rows * self.block_height), 2)
+        
+        # 2. UI-Steuerung & Informationen unterhalb des Grids
+        ui_y = self.rows * self.block_height + 20
+        
+        # Aktuelle Werkzeug-Auswahl anzeigen
+        active_label = self.types[self.current_type]['label']
+        sel_text = self.font.render(f"Ausgewaehltes Werkzeug: {active_label}", True, YELLOW)
+        self.screen.blit(sel_text, (20, ui_y))
+        
+        # Anleitungstexte
+        instructions = [
+            "BEDIENUNG:",
+            "- Tasten [1], [2], [P] oder [0] druecken, um Blocktyp zu wechseln",
+            "- Linke Maustaste gedrueckt halten: Blöcke zeichnen",
+            "- Rechte Maustaste gedrueckt halten: Blöcke radieren",
+            "- Taste [S] druecken: Als naechstes freies Level in /levels/ speichern",
+            "- Taste [ESC] druecken: Editor schliessen"
+        ]
+        
+        for idx, text in enumerate(instructions):
+            # Überschrift bekommt eine andere Farbe
+            color = (50, 150, 255) if idx == 0 else WHITE
+            txt_surf = self.font.render(text, True, color)
+            self.screen.blit(txt_surf, (20, ui_y + 40 + idx * 22))
+            
+        pygame.display.flip()
+
+if __name__ == "__main__":
+    editor = LevelEditor()
+    editor.run()
+    pygame.quit()
