@@ -1,3 +1,5 @@
+import math
+
 import pygame
 import sys
 import os
@@ -91,13 +93,15 @@ class Game:
         level_file = get_level_name(self.current_level_num)
         self.blocks = self.level_manager.load_level(level_file)
         
-        # Falls Datei fehlt, Sicherheitsanker zurück ins Menü
         if len(self.blocks) == 0:
             self.state = STATE_MENU
             return
 
         self.reset_paddle()
-        start_ball = Ball(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 60)
+        
+        # ANGEPASST: Ball startet direkt auf der Position des Paddles
+        start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8)
+        start_ball.attached = True # NEU: Ball anheften
         self.balls.add(start_ball)
         
         self.all_sprites.add(self.paddle, self.balls, self.blocks)
@@ -186,14 +190,20 @@ class Game:
                 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    # Wenn wir im Spiel sind, bringt uns ESC zurück ins Menü, sonst beendet es das Spiel
                     if self.state == STATE_PLAYING:
                         self.state = STATE_MENU
                     else:
                         self.running = False
-            
-            # NEU: Mausklick im Menü abfangen
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # Linksklick
+                
+                # NEU: Leertaste schießt den angehefteten Ball ab
+                if event.key == pygame.K_SPACE and self.state == STATE_PLAYING:
+                    for ball in self.balls:
+                        if ball.attached:
+                            ball.attached = False
+                            ball.speed_x = 0.0  # Schnurgerade nach oben
+                            ball.speed_y = -3.0 # Startgeschwindigkeit
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == STATE_MENU:
                     clicked_level = self.menu.handle_click(event.pos)
                     if clicked_level:
@@ -204,25 +214,43 @@ class Game:
         if self.state == STATE_PLAYING:
             self.check_timers()
             
+            # NEU: Alle angehefteten Bälle exakt auf das Paddle setzen, BEVOR das Update läuft
             for ball in self.balls:
-                ball.rect.x += ball.speed_x * (self.time_factor - 1)
-                ball.rect.y += ball.speed_y * (self.time_factor - 1)
+                if ball.attached:
+                    ball.rect.centerx = self.paddle.rect.centerx
+                    ball.rect.bottom = self.paddle.rect.top
+                    # Wichtig: Float-Koordinaten für unser Sub-Pixel-Tracking aktualisieren!
+                    ball.x = float(ball.rect.x)
+                    ball.y = float(ball.rect.y)
 
-            self.all_sprites.update()
+            self.paddle.update()
+            self.powerups.update()
+            self.blocks.update()
+            self.balls.update(self.time_factor)
+            
+            # Hier übergeben wir den Zeitfaktor jetzt sauber an die Ballgruppe:
+            self.balls.update(self.time_factor)
             
             for ball in list(self.balls):
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
                     hit_pos = ball.rect.centerx - self.paddle.rect.centerx
                     relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
                     
-                    # NEU: Ein minimaler Drall, falls man exakt die Mitte (0) trifft
+                    # 1. Hier stellst du die absolute Wunsch-Geschwindigkeit des Balls ein!
+                    # Ändere diese Zahl (z.B. auf 5.0 oder 6.0), um das Spieltempo perfekt zu tunen.
+                    BALL_TEMPO = 4.5
+                    
+                    # Anti-Gerade-oben-Schutz: Falls genau die Mitte getroffen wird
                     if abs(relative_hit) < 0.1:
-                        # Gibt dem Ball einen minimalen Schubs nach links oder rechts
-                        ball.speed_x = random.choice([-1.5, 1.5])
-                    else:
-                        ball.speed_x = relative_hit * 7
-                        
-                    ball.speed_y = -6
+                        relative_hit = random.choice([-0.15, 0.15])
+                    
+                    # 2. Horizontalen Speed berechnen (max. 80% des Gesamttempos für flache Winkel)
+                    ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
+                    
+                    # 3. Vertikalen Speed berechnen mit dem Satz des Pythagoras:
+                    # Gesamtgeschwindigkeit^2 = speed_x^2 + speed_y^2
+                    # Daraus folgt: speed_y = sqrt(Gesamtgeschwindigkeit^2 - speed_x^2)
+                    ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
 
                 hit_blocks = pygame.sprite.spritecollide(ball, self.blocks, False)
                 if hit_blocks:

@@ -58,7 +58,7 @@ class Paddle(pygame.sprite.Sprite):
         if self.rect.right > SCREEN_WIDTH: 
             self.rect.right = SCREEN_WIDTH
 
-# Ersetze die Ball-Klasse in sprites.py mit dieser Version:
+# In sprites.py die Ball-Klasse ersetzen:
 
 class Ball(pygame.sprite.Sprite):
     def __init__(self, x, y, speed_x=5, speed_y=-5):
@@ -66,52 +66,64 @@ class Ball(pygame.sprite.Sprite):
         self.radius = 8
         self.is_piercing = False
         
-        # Grafik erstellen
+        # NEU: Standardmäßig ist der Ball erst einmal NICHT festgeklebt (wichtig für Multiball)
+        self.attached = False 
+        
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         pygame.draw.circle(self.image, YELLOW, (self.radius, self.radius), self.radius)
         
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
-        self.speed_x = speed_x
-        self.speed_y = speed_y
+        
+        self.x = float(self.rect.x)
+        self.y = float(self.rect.y)
+        
+        self.speed_x = float(speed_x)
+        self.speed_y = float(speed_y)
+
 
     def set_size(self, new_radius):
-        # Ändert die Größe des Balls dynamisch
         self.radius = new_radius
         old_center = self.rect.center
         self.image: pygame.Surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         color = RED if self.is_piercing else YELLOW
         pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
         self.rect = self.image.get_rect(center=old_center)
+        # Wichtig: Nach Größenänderung die Float-Koordinaten neu abgleichen
+        self.x = float(self.rect.x)
+        self.y = float(self.rect.y)
 
     def set_piercing(self, piercing):
         self.is_piercing = piercing
-        # Optisches Feedback: Ein stechender Ball wird feurig rot
         color = RED if piercing else YELLOW
         pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
 
-    def update(self):
-        # Bewegung anwenden
-        self.rect.x += self.speed_x
-        self.rect.y += self.speed_y
-
-        # ==========================================
-        # KORRIGIERTE WAND-KOLLISIONEN (mit Reset)
-        # ==========================================
+    # ANGEPASST: update() nimmt jetzt direkt den Zeitfaktor entgegen    
+    def update(self, time_factor=1.0):
+        # NEU: Wenn der Ball angeheftet ist, überspringen wir die Eigenbewegung!
+        if self.attached:
+            return
+        # 1. Bewegung hochpräzise auf den Float-Variablen berechnen
+        self.x += self.speed_x * time_factor
+        self.y += self.speed_y * time_factor
         
-        # Kollision mit der linken Wand
+        # 2. Erst JETZT den ganzzahligen Wert an das Rect für die Grafik übergeben
+        self.rect.x = int(self.x)
+        self.rect.y = int(self.y)
+
+        # 3. Wand-Kollisionen (mit Float-Positionskorrektur!)
         if self.rect.left <= 0:
-            self.rect.left = 0          # Setzt den Ball exakt an den linken Rand
-            self.speed_x *= -1          # Richtung umkehren
-            
-        # Kollision mit der rechten Wand
+            self.rect.left = 0
+            self.x = float(self.rect.x)  # Float-Speicher exakt mit Wand synchronisieren
+            self.speed_x *= -1
         elif self.rect.right >= SCREEN_WIDTH:
-            self.rect.right = SCREEN_WIDTH  # Setzt den Ball exakt an den rechten Rand
-            self.speed_x *= -1              # Richtung umkehren
+            self.rect.right = SCREEN_WIDTH
+            self.x = float(self.rect.x)  # Float-Speicher exakt mit Wand synchronisieren
+            self.speed_x *= -1
             
-        # Kollision mit der Decke
         if self.rect.top <= 0:
-            self.rect.top = 0           # Setzt den Ball exakt unter die Decke
-            self.speed_y *= -1          # Richtung umkehren
+            self.rect.top = 0
+            self.y = float(self.rect.y)  # Float-Speicher exakt mit Decke synchronisieren
+            self.speed_y *= -1
             
 class PowerUp(pygame.sprite.Sprite):
     def __init__(self, x, y, effect_type):
@@ -122,7 +134,7 @@ class PowerUp(pygame.sprite.Sprite):
         self.image = pygame.Surface((self.width, self.height))
         
         # Optische Unterscheidung: Positiv (Grün), Negativ (Rot)
-        if effect_type in ["expand_paddle", "slow_time", "bigger_ball"]:
+        if effect_type in ["expand_paddle", "slow_time", "bigger_ball", "multiball"]:
             self.image.fill(GREEN)
         else:
             self.image.fill(RED)
