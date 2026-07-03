@@ -20,7 +20,7 @@ class LevelSelectionMenu:
         # Liest den Ordner aus und filtert nach levelX.txt
         if os.path.exists("levels"):
             files = os.listdir("levels")
-            level_files = [f for f in files if f.startswith("level") and f.endswith(".txt")]
+            level_files = [f for f in files if f.startswith("Level") and f.endswith(".txt")]
             # Sortiert sie numerisch (level1, level2, level10 etc.)
             self.levels = sorted(level_files, key=lambda x: int(''.join(filter(str.isdigit, x))))
         
@@ -28,6 +28,7 @@ class LevelSelectionMenu:
             self.levels = ["level1.txt"] # Fallback, falls der Ordner leer ist
 
     def draw(self, unlocked_level):
+        self.detect_levels()  # NEU: Scannt den Ordner bei jedem Frame live nach Dateien!
         self.buttons.clear()
         
         # Titel zeichnen

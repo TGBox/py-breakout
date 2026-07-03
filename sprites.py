@@ -47,9 +47,9 @@ class Paddle(pygame.sprite.Sprite):
     def update(self):
         # Steuerung
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.rect.x -= self.speed
-        if keys[pygame.K_RIGHT]:
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.rect.x += self.speed
             
         # Randbegrenzung (Paddle darf nicht aus dem Bildschirm fliegen)
