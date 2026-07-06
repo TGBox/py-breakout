@@ -188,12 +188,32 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 
+            # NEU: Automatisch pausieren, wenn das Fenster vom Betriebssystem minimiert wird
+            if event.type == pygame.WINDOWMINIMIZED:
+                if self.state == STATE_PLAYING:
+                    self.state = STATE_PAUSED
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == STATE_PLAYING:
-                        self.state = STATE_MENU
+                        self.state = STATE_PAUSED # ESC pausiert jetzt auch gemütlich
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_PLAYING
                     else:
                         self.running = False
+                
+                # NEU: Reguläre Pause mit der Taste 'P' toggeln
+                if event.key == pygame.K_p:
+                    if self.state == STATE_PLAYING:
+                        self.state = STATE_PAUSED
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_PLAYING
+
+                # NEU: Pause + Minimieren mit der Taste 'M'
+                if event.key == pygame.K_m:
+                    if self.state == STATE_PLAYING:
+                        self.state = STATE_PAUSED
+                    pygame.display.iconify() # Minimiert das Pygame-Fenster in die Taskleiste
                 
                 # NEU: Leertaste schießt den angehefteten Ball ab
                 if event.key == pygame.K_SPACE and self.state == STATE_PLAYING:
@@ -201,7 +221,7 @@ class Game:
                         if ball.attached:
                             ball.attached = False
                             ball.speed_x = 0.0  # Schnurgerade nach oben
-                            ball.speed_y = -3.0 # Startgeschwindigkeit
+                            ball.speed_y = -4.0 # Startgeschwindigkeit
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == STATE_MENU:
@@ -211,15 +231,14 @@ class Game:
                         self.start_game()
 
     def update(self):
+        # ANGEPASST: Logik läuft NUR im PLAYING-Zustand. Im PAUSED-Zustand friert alles ein.
         if self.state == STATE_PLAYING:
             self.check_timers()
             
-            # NEU: Alle angehefteten Bälle exakt auf das Paddle setzen, BEVOR das Update läuft
             for ball in self.balls:
                 if ball.attached:
                     ball.rect.centerx = self.paddle.rect.centerx
                     ball.rect.bottom = self.paddle.rect.top
-                    # Wichtig: Float-Koordinaten für unser Sub-Pixel-Tracking aktualisieren!
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
@@ -287,12 +306,30 @@ class Game:
                     self.state = STATE_MENU
 
     def draw(self):
-        self.screen.fill(DARK_GREY)
-        if self.state == STATE_MENU:
-            # ANGEPASST: Nutzt jetzt die draw-Methode der neuen Klasse
-            self.menu.draw(self.unlocked_level)
-        elif self.state == STATE_PLAYING:
+        self.screen.fill(BLACK) # Oder dein Hintergrund
+        
+        # Zeichne nur alle Sprites, wenn kein Menü offen ist, damit man das eingefrorene Spiel auch während der Pause im Hintergrund sieht
+        if self.state == STATE_PLAYING or self.state == STATE_PAUSED:
             self.all_sprites.draw(self.screen)
+        
+        # NEU: Wenn pausiert, legen wir einen Text drüber
+        if self.state == STATE_PAUSED:
+            # Ein großer, fetter Pause-Schriftzug
+            font = pygame.font.SysFont(None, 60, bold=True)
+            text_surf = font.render("SPIEL PAUSIERT", True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+            
+            # Optional: Kleiner Untertext mit Anleitung
+            sub_font = pygame.font.SysFont(None, 24)
+            sub_surf = sub_font.render("Drücke 'P' oder 'ESC' zum Weiterspielen", True, (200, 200, 200))
+            sub_rect = sub_surf.get_rect(center=(SCREEN_WIDTH // 2, (SCREEN_HEIGHT // 2) + 50))
+            
+            self.screen.blit(text_surf, text_rect)
+            self.screen.blit(sub_surf, sub_rect)
+            
+        elif self.state == STATE_MENU:
+            self.menu.draw(self.unlocked_level)
+            
         pygame.display.flip()
         
     def run(self):
