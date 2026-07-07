@@ -1,24 +1,7 @@
-# editor.py
 import pygame
-import sys
 import os
 from settings import *
-
-def get_level_name(lvl_nr: int) -> str:
-    """Method to take the level number int and convert it to the corresponding level file name.
-
-    Args:
-        lvl_nr (int): The current level number.
-
-    Returns:
-        str: The level file name for the given level number.
-    """
-    if lvl_nr <= 9:
-        return f"Level00{lvl_nr}.txt"
-    elif lvl_nr > 9 and lvl_nr <= 99:
-        return f"Level0{lvl_nr}.txt"
-    else: # lvl_nr > 99
-        return f"Level{lvl_nr}.txt"
+from game import get_level_name
 
 class LevelEditor:
     def __init__(self):
