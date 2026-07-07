@@ -1,14 +1,21 @@
+# editor.py
 import pygame
 import os
 from settings import *
-from game import get_level_name
 
 class LevelEditor:
-    def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Breakout - Level Editor")
-        self.clock = pygame.time.Clock()
+    def __init__(self, screen: pygame.Surface|None = None):
+        # Erkennen, ob der Editor im Spiel eingebettet ist oder alleine läuft
+        self.embedded = screen is not None
+        
+        if self.embedded:
+            self.screen: pygame.Surface = screen # type: ignore
+        else:
+            # Nur ausführen, wenn die editor.py separat gestartet wird
+            pygame.init()
+            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            pygame.display.set_caption("Breakout - Level Editor")
+            self.clock = pygame.time.Clock()
         
         # Grid-Einstellungen (Passend zur LevelManager-Logik)
         self.cols = 10
@@ -22,16 +29,13 @@ class LevelEditor:
         # Aktuell ausgewählter Block-Typ zum Platzieren
         self.current_type = "1"
         
-        # Definition der Block-Typen für die Darstellung im Editor
-        # Falls Farben wie BLUE oder BLACK nicht in deiner settings.py sind,
-        # nutzen wir hier feste RGB-Tuples als Fallback.
         self.types = {
-            "0": {"color": (BLUE), "label": "Radiergummi / Leer (Taste 0)"},
+            "0": {"color": BLUE, "label": "Radiergummi / Leer (Taste 0)"},
             "1": {"color": YELLOW, "label": "Normaler Block (Taste 1)"},
-            "2": {"color": (ORANGE_YELLOW), "label": "Starker Block (2 Leben) (Taste 2)"},
-            "3": {"color": (ORANGE), "label": "Starker Block (3 Leben) (Taste 3)"},
-            "4": {"color": (REDDISH_ORANGE), "label": "Starker Block (4 Leben) (Taste 4)"},
-            "5": {"color": (RED), "label": "Starker Block (5 Leben) (Taste 5)"},
+            "2": {"color": ORANGE_YELLOW, "label": "Starker Block (2 Leben) (Taste 2)"},
+            "3": {"color": ORANGE, "label": "Starker Block (3 Leben) (Taste 3)"},
+            "4": {"color": REDDISH_ORANGE, "label": "Starker Block (4 Leben) (Taste 4)"},
+            "5": {"color": RED, "label": "Starker Block (5 Leben) (Taste 5)"},
             "P": {"color": GREEN, "label": "PowerUp-Block (Taste P)"}
         }
         
@@ -39,38 +43,40 @@ class LevelEditor:
         self.running = True
 
     def run(self):
+        """Wird NUR genutzt, wenn die editor.py eigenständig gestartet wird!"""
         while self.running:
-            self.events()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.running = False
+                self.handle_event(event)
+                
+            self.update()
             self.draw()
             self.clock.tick(60)
 
-    def events(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
+    def handle_event(self, event):
+        """Verarbeitet EINZELNE Events aus der Hauptschleife (wichtig fürs Hauptspiel)"""
+        if event.type == pygame.KEYDOWN:
+            # Typen-Auswahl per Tastatur
+            if event.key == pygame.K_1: self.current_type = "1"
+            if event.key == pygame.K_2: self.current_type = "2"
+            if event.key == pygame.K_3: self.current_type = "3"
+            if event.key == pygame.K_4: self.current_type = "4"
+            if event.key == pygame.K_5: self.current_type = "5"
+            if event.key == pygame.K_p: self.current_type = "P"
+            if event.key == pygame.K_0: self.current_type = "0"
             
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.running = False
-                
-                # Typen-Auswahl per Tastatur
-                if event.key == pygame.K_1: self.current_type = "1"
-                if event.key == pygame.K_2: self.current_type = "2"
-                if event.key == pygame.K_3: self.current_type = "3"
-                if event.key == pygame.K_4: self.current_type = "4"
-                if event.key == pygame.K_5: self.current_type = "5"
-                if event.key == pygame.K_p: self.current_type = "P"
-                if event.key == pygame.K_0: self.current_type = "0"
-                
-                # Speichern auslösen
-                if event.key == pygame.K_s:
-                    self.save_level()
+            # Speichern auslösen
+            if event.key == pygame.K_s:
+                self.save_level()
 
-        # Kontinuierliches Zeichnen bei gedrückter Maustaste erlauben
+    def update(self):
+        """Beobachtet kontinuierlich die Maus im Editor-Modus (läuft jeden Frame)"""
         mouse_buttons = pygame.mouse.get_pressed()
         mouse_pos = pygame.mouse.get_pos()
         
-        # Prüfen, ob die Maus im oberen Grid-Bereich ist
         grid_limit_y = self.rows * self.block_height
         if mouse_pos[1] < grid_limit_y:
             col = mouse_pos[0] // self.block_width
@@ -83,11 +89,12 @@ class LevelEditor:
                     self.grid[row][col] = "0"
 
     def save_level(self):
-        # Ordner erstellen, falls er gelöscht wurde
+        # Lokaler Import verhindert den Absturz durch zirkuläre Importe!
+        from game import get_level_name
+
         if not os.path.exists("levels"):
             os.makedirs("levels")
             
-        # Dynamisch die nächste freie Level-Nummer ermitteln
         level_num = 1
         while os.path.exists(os.path.join("levels", get_level_name(level_num))):
             level_num += 1
@@ -100,8 +107,6 @@ class LevelEditor:
                     line = "".join(row) + "\n"
                     file.write(line)
             print(f"[Editor] Level erfolgreich gespeichert unter: {filename}")
-            
-            # Visuelles Feedback auf dem Screen (kurz den Titel ändern)
             pygame.display.set_caption(f"GESPEICHERT ALS {get_level_name(level_num)}!")
         except Exception as e:
             print(f"[Editor-Fehler] Konnte Level nicht schreiben: {e}")
@@ -115,30 +120,24 @@ class LevelEditor:
                 block_type = self.grid[row][col]
                 color = self.types[block_type]["color"]
                 
-                # Ein Rechteck mit 2 Pixel Abstand für die Gitternetz-Optik
                 rect = pygame.Rect(col * self.block_width, row * self.block_height, 
                                    self.block_width - 2, self.block_height - 2)
                 pygame.draw.rect(self.screen, color, rect)
                 
-                # Ein 'P' einzeichnen, damit man PowerUp-Blöcke sofort erkennt
                 if block_type == "P":
                     p_txt = self.font.render("P", True, (0, 0, 0))
                     self.screen.blit(p_txt, (rect.x + rect.width//2 - p_txt.get_width()//2, 
                                              rect.y + rect.height//2 - p_txt.get_height()//2))
 
-        # Trennlinie zwischen Editor-Grid und UI-Steuerung
         pygame.draw.line(self.screen, WHITE, (0, self.rows * self.block_height), 
                          (SCREEN_WIDTH, self.rows * self.block_height), 2)
         
         # 2. UI-Steuerung & Informationen unterhalb des Grids
         ui_y = self.rows * self.block_height + 20
-        
-        # Aktuelle Werkzeug-Auswahl anzeigen
         active_label = self.types[self.current_type]['label']
         sel_text = self.font.render(f"Ausgewaehltes Werkzeug: {active_label}", True, YELLOW)
         self.screen.blit(sel_text, (20, ui_y))
         
-        # Anleitungstexte
         instructions = [
             "BEDIENUNG:",
             "- Tasten [1], [2], [3], [4], [5], [P] oder [0] druecken, um Blocktyp zu wechseln",
@@ -149,7 +148,6 @@ class LevelEditor:
         ]
         
         for idx, text in enumerate(instructions):
-            # Überschrift bekommt eine andere Farbe
             color = (50, 150, 255) if idx == 0 else WHITE
             txt_surf = self.font.render(text, True, color)
             self.screen.blit(txt_surf, (20, ui_y + 40 + idx * 22))
@@ -157,6 +155,7 @@ class LevelEditor:
         pygame.display.flip()
 
 if __name__ == "__main__":
+    # Wenn man die Datei direkt ausführt, startet sie wie gewohnt autonom
     editor = LevelEditor()
     editor.run()
     pygame.quit()

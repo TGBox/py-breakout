@@ -6,7 +6,8 @@ import random
 from settings import *
 from level_manager import LevelManager
 from sprites import Paddle, Ball, PowerUp
-from menu import LevelSelectionMenu
+from menu import LevelSelectionMenu, MainMenu
+from editor import LevelEditor
 
 def get_level_name(lvl_nr: int) -> str:
     """Method to take the level number int and convert it to the corresponding level file name.
@@ -41,7 +42,9 @@ class Game:
         self.load_game()
         
         # Menü initialisieren
-        self.menu = LevelSelectionMenu(self.screen) # NEU
+        self.menu = MainMenu()
+        self.level_selection_menu = LevelSelectionMenu(self.screen)
+        self.editor = LevelEditor(self.screen)
         
         # Sprite-Gruppen
         self.all_sprites = pygame.sprite.Group()
@@ -190,60 +193,100 @@ class Game:
             del self.active_effects["piercing"]
 
     def events(self):
+        # Alle aufgelaufenen Pygame-Events abgreifen (NUR DIESE EINE SCHLEIFE NUTZEN!)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            
+            # ==========================================
+            # ZUSTAND: HAUPTMENÜ (STATE_MENU)
+            # ==========================================
+            if self.state == STATE_MENU:
+                # Reicht das Event an das Hauptmenü weiter und wartet auf eine Aktion
+                action = self.menu.handle_event(event)
                 
-            # NEU: Automatisch pausieren, wenn das Fenster vom Betriebssystem minimiert wird
-            if event.type == pygame.WINDOWMINIMIZED:
-                if self.state == STATE_PLAYING:
-                    self.state = STATE_PAUSED
+                if action == "PLAY":
+                    # NEU: Zwingt das Spiel, mit dem zuletzt freigeschalteten Level zu starten!
+                    self.current_level_num = self.unlocked_level 
+                    self.state = STATE_PLAYING
+                    self.start_game()
+                    
+                elif action == "LEVEL_SELECT":
+                    self.state = STATE_LEVEL_SELECT
+                    
+                elif action == "EDITOR":
+                    self.state = STATE_EDITOR
+                    print("[System] Editor wird geöffnet...")
+                    
+                elif action == "RESET":
+                    self.unlocked_level = 1
+                    self.current_level_num = 1
+                    self.save_game()
+                    print("[Spielstand] Fortschritt zurückgesetzt!")
+                    
+                elif action == "QUIT":
+                    self.running = False
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    if self.state == STATE_PLAYING:
-                        self.state = STATE_PAUSED # ESC pausiert jetzt auch gemütlich
-                    elif self.state == STATE_PAUSED:
+            # ==========================================
+            # ZUSTAND: LEVELAUSWAHL (STATE_LEVEL_SELECT)
+            # ==========================================
+            elif self.state == STATE_LEVEL_SELECT:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    chosen_level = self.level_selection_menu.handle_click(pygame.mouse.get_pos())
+                    
+                    # HIER REAGIEREN WIR AUF DEN NEUEN BUTTON:
+                    if chosen_level == "BACK":
+                        self.state = STATE_MENU
+                        
+                    elif chosen_level is not None:
+                        self.current_level_num = chosen_level
                         self.state = STATE_PLAYING
-                    else:
-                        self.running = False
-                
-                # NEU: Reguläre Pause mit der Taste 'P' toggeln
-                if event.key == pygame.K_p:
-                    if self.state == STATE_PLAYING:
-                        self.state = STATE_PAUSED
-                    elif self.state == STATE_PAUSED:
-                        self.state = STATE_PLAYING
-
-                # NEU: Pause + Minimieren mit der Taste 'M'
-                if event.key == pygame.K_m:
-                    if self.state == STATE_PLAYING:
-                        self.state = STATE_PAUSED
-                    pygame.display.iconify() # Minimiert das Pygame-Fenster in die Taskleiste
-                
-                if event.key == pygame.K_SPACE and self.state == STATE_PLAYING:
-                    for ball in self.balls:
-                        if ball.attached:
-                            ball.attached = False
-                            
-                            # NEU: Abschusswinkel exakt aus der Klebe-Position berechnen!
-                            hit_pos = getattr(ball, "sticky_offset_x", 0)
-                            relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
-                            
-                            BALL_TEMPO = 4.0 # Nutzt dein exaktes Basis-Balltempo aus der update()
-                            if abs(relative_hit) < 0.1:
-                                relative_hit = random.choice([-0.15, 0.15])
-                            
-                            # Berechnet die schräge Flugbahn
-                            ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
-                            ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
-
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.state == STATE_MENU:
-                    clicked_level = self.menu.handle_click(event.pos)
-                    if clicked_level:
-                        self.current_level_num = clicked_level
                         self.start_game()
+                
+                # Mit ESC zurück ins Hauptmenü
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.state = STATE_MENU
+
+            # ==========================================
+            # ZUSTAND: LAUFENDES SPIEL (STATE_PLAYING)
+            # ==========================================
+            elif self.state == STATE_PLAYING:
+                if event.type == pygame.KEYDOWN:
+                    # Bälle mit Leertaste abschießen (aus dem Sticky-Zustand)
+                    if event.key == pygame.K_SPACE:
+                        for ball in self.balls:
+                            if ball.attached:
+                                ball.attached = False
+                                hit_pos = getattr(ball, "sticky_offset_x", 0)
+                                relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                                
+                                BALL_TEMPO = 4.0
+                                if abs(relative_hit) < 0.1:
+                                    relative_hit = random.choice([-0.15, 0.15])
+                                
+                                ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
+                                ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
+                    
+                    # Pause-Taste
+                    elif event.key == pygame.K_p:
+                        self.state = STATE_PAUSED
+
+            # ==========================================
+            # ZUSTAND: PAUSE (STATE_PAUSED)
+            # ==========================================
+            elif self.state == STATE_PAUSED:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                    self.state = STATE_PLAYING
+            # ==========================================
+            # ZUSTAND: LEVEL-EDITOR (STATE_EDITOR)
+            # ==========================================
+            elif self.state == STATE_EDITOR:
+                self.editor.handle_event(event) # Deine Tastenbelegung (1-5, P, S)
+                
+                # ESC schaltet sauber zurück ins Hauptmenü
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.state = STATE_MENU
+                    pygame.display.set_caption("Breakout") # Setzt den Titel zurück
 
     def update(self):
         # Logik läuft NUR im PLAYING-Zustand. Im PAUSED-Zustand friert alles ein.
@@ -337,6 +380,8 @@ class Game:
                 else:
                     print("Glückwunsch! Alle verfügbaren Level gemeistert!")
                     self.state = STATE_MENU
+        elif self.state == STATE_EDITOR:
+            self.editor.update() # NEU: Aktualisiert das kontinuierliche Maus-Zeichnen
 
     def draw(self):
         self.screen.fill(BLACK) # Oder dein Hintergrund
@@ -361,7 +406,12 @@ class Game:
             self.screen.blit(sub_surf, sub_rect)
             
         elif self.state == STATE_MENU:
-            self.menu.draw(self.unlocked_level)
+            self.menu.draw(self.screen, self.unlocked_level)
+        elif self.state == STATE_LEVEL_SELECT:
+            self.level_selection_menu.draw(self.unlocked_level)
+            
+        elif self.state == STATE_EDITOR:
+            self.editor.draw()
             
         pygame.display.flip()
         
