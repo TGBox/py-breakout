@@ -43,9 +43,12 @@ class LevelEditor:
         # Falls Farben wie BLUE oder BLACK nicht in deiner settings.py sind,
         # nutzen wir hier feste RGB-Tuples als Fallback.
         self.types = {
-            "0": {"color": (40, 40, 40), "label": "Radiergummi / Leer (Taste 0)"},
-            "1": {"color": WHITE, "label": "Normaler Block (Taste 1)"},
-            "2": {"color": (230, 70, 70), "label": "Starker Block (Taste 2)"},
+            "0": {"color": (BLUE), "label": "Radiergummi / Leer (Taste 0)"},
+            "1": {"color": YELLOW, "label": "Normaler Block (Taste 1)"},
+            "2": {"color": (ORANGE_YELLOW), "label": "Starker Block (2 Leben) (Taste 2)"},
+            "3": {"color": (ORANGE), "label": "Starker Block (3 Leben) (Taste 3)"},
+            "4": {"color": (REDDISH_ORANGE), "label": "Starker Block (4 Leben) (Taste 4)"},
+            "5": {"color": (RED), "label": "Starker Block (5 Leben) (Taste 5)"},
             "P": {"color": GREEN, "label": "PowerUp-Block (Taste P)"}
         }
         
@@ -70,6 +73,9 @@ class LevelEditor:
                 # Typen-Auswahl per Tastatur
                 if event.key == pygame.K_1: self.current_type = "1"
                 if event.key == pygame.K_2: self.current_type = "2"
+                if event.key == pygame.K_3: self.current_type = "3"
+                if event.key == pygame.K_4: self.current_type = "4"
+                if event.key == pygame.K_5: self.current_type = "5"
                 if event.key == pygame.K_p: self.current_type = "P"
                 if event.key == pygame.K_0: self.current_type = "0"
                 
@@ -152,7 +158,7 @@ class LevelEditor:
         # Anleitungstexte
         instructions = [
             "BEDIENUNG:",
-            "- Tasten [1], [2], [P] oder [0] druecken, um Blocktyp zu wechseln",
+            "- Tasten [1], [2], [3], [4], [5], [P] oder [0] druecken, um Blocktyp zu wechseln",
             "- Linke Maustaste gedrueckt halten: Blöcke zeichnen",
             "- Rechte Maustaste gedrueckt halten: Blöcke radieren",
             "- Taste [S] druecken: Als nächstes freies Level in /levels/ speichern",

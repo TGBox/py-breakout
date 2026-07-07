@@ -8,11 +8,6 @@ class Block(pygame.sprite.Sprite):
         self.width = BLOCK_WIDTH
         self.height = BLOCK_HEIGHT
         
-        # NEU: Lebenspunkte basierend auf dem Typ vergeben
-        if self.block_type == "2":
-            self.health = 2
-        else:
-            self.health = 1
 
         self.image: pygame.Surface = pygame.Surface((width, height))
         
@@ -24,8 +19,18 @@ class Block(pygame.sprite.Sprite):
         if self.block_type == '1':
             self.image.fill(GREEN)
         elif self.block_type == '2':
+            self.image.fill(YELLOW)
+            self.health = 2
+            self.image.fill(ORANGE_YELLOW)
+        elif self.block_type == "3":
+            self.health = 3
+            self.image.fill(ORANGE)
+        elif self.block_type == "4":
+            self.health = 4
+            self.image.fill(REDDISH_ORANGE)
+        elif self.block_type == "5":
+            self.health = 5
             self.image.fill(RED)
-            self.health = 2 # Braucht zwei Treffer
         elif self.block_type == 'P':
             self.image.fill(BLUE)
             self.is_powerup = True # Lässt später ein Power-Up fallen
@@ -85,7 +90,7 @@ class Ball(pygame.sprite.Sprite):
         self.attached = False 
         
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, YELLOW, (self.radius, self.radius), self.radius)
+        pygame.draw.circle(self.image, PURPLE, (self.radius, self.radius), self.radius)
         
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
         
@@ -100,7 +105,7 @@ class Ball(pygame.sprite.Sprite):
         self.radius = new_radius
         old_center = self.rect.center
         self.image: pygame.Surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
-        color = RED if self.is_piercing else YELLOW
+        color = RED if self.is_piercing else PURPLE
         pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
         self.rect = self.image.get_rect(center=old_center)
         # Wichtig: Nach Größenänderung die Float-Koordinaten neu abgleichen
@@ -109,7 +114,7 @@ class Ball(pygame.sprite.Sprite):
 
     def set_piercing(self, piercing):
         self.is_piercing = piercing
-        color = RED if piercing else YELLOW
+        color = RED if piercing else PURPLE
         pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
 
     # ANGEPASST: update() nimmt jetzt direkt den Zeitfaktor entgegen    
