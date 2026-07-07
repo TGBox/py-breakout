@@ -155,7 +155,7 @@ class LevelEditor:
             "- Tasten [1], [2], [P] oder [0] druecken, um Blocktyp zu wechseln",
             "- Linke Maustaste gedrueckt halten: Blöcke zeichnen",
             "- Rechte Maustaste gedrueckt halten: Blöcke radieren",
-            "- Taste [S] druecken: Als naechstes freies Level in /levels/ speichern",
+            "- Taste [S] druecken: Als nächstes freies Level in /levels/ speichern",
             "- Taste [ESC] druecken: Editor schliessen"
         ]
         

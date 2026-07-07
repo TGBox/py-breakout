@@ -1,13 +1,11 @@
 import math
-
 import pygame
-import sys
 import os
 import json
-import random # NEU: Für Zufall bei Power-Ups
+import random
 from settings import *
 from level_manager import LevelManager
-from sprites import Block, Paddle, Ball, PowerUp
+from sprites import Paddle, Ball, PowerUp
 from menu import LevelSelectionMenu
 
 def get_level_name(lvl_nr: int) -> str:
