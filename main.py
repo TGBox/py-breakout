@@ -8,6 +8,7 @@ from game import Game
 # TODO: FEATURE: Add more power ups.
 # TODO: FEATURE: Add more block types.
 # TODO: BUG: Sticky paddle needs to have a stricter timer.
+# TODO: BUG: Sticky paddle needs to allow for angled shots when the ball sticks to it non-centered.
 # TODO: FEATURE: Multiple effects currently already stack together, but multiple power ups of the same type could maybe increase the level of the effect, depending on the type. (e.g. wider paddle gives an even wider paddle when collected twice. but slower ball shouldn't bring the game speed down to unplayable levels.)
 # TODO: FEATURE: Background of the game should be something more exciting.
 # TODO: FEATURE: Effects for the ball and for breaking blocks.
