@@ -3,13 +3,17 @@
 # Fenster-Einstellungen
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
+BLOCK_WIDTH = 60
+BLOCK_HEIGHT = 30
+BALL_SPEED = 5.5
 FPS = 60
-TITLE = "Breakout Clone"
+TITLE = "Danis Breakout"
 
 # Farben (R, G, B)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
+ORANGE = (255, 133, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)

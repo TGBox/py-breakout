@@ -6,7 +6,7 @@ from settings import *
 class LevelManager:
     def __init__(self):
         # Wir holen uns die Maße eines temporären Blocks für die Berechnung
-        temp_block = Block(0, 0, '1')
+        temp_block = Block(0, 0, 0, 0, '1')
         self.block_width = temp_block.width
         self.block_height = temp_block.height
         self.padding = 5       # Abstand zwischen den Blöcken
@@ -42,7 +42,7 @@ class LevelManager:
                     y = self.offset_y + row_idx * (self.block_height + self.padding)
                     
                     # Block erstellen und zur Gruppe hinzufügen
-                    block = Block(x, y, char)
+                    block = Block(x, y, self.block_width, self.block_height, char)
                     blocks.add(block)
                     
         return blocks

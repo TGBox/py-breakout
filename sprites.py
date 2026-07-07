@@ -2,14 +2,19 @@ import pygame
 from settings import *
 
 class Block(pygame.sprite.Sprite):
-    def __init__(self, x, y, block_type):
+    def __init__(self, x, y, width, height, block_type):
         super().__init__()
-        self.block_type = block_type
-        self.width = 60
-        self.height = 30
+        self.block_type = block_type # Speichert z.B. "RED", "ORANGE" oder "R", "O"
+        self.width = BLOCK_WIDTH
+        self.height = BLOCK_HEIGHT
         
-        # Grafik-Oberfläche für den Block erstellen
-        self.image = pygame.Surface((self.width, self.height))
+        # NEU: Lebenspunkte basierend auf dem Typ vergeben
+        if self.block_type == "2":
+            self.health = 2
+        else:
+            self.health = 1
+
+        self.image: pygame.Surface = pygame.Surface((width, height))
         
         # Standardwerte
         self.health = 1
@@ -26,9 +31,19 @@ class Block(pygame.sprite.Sprite):
             self.is_powerup = True # Lässt später ein Power-Up fallen
             
         # Hitbox (Rect) setzen und positionieren
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
+        self.rect = self.image.get_rect(topleft=(x, y))
+        
+    # NEU: Diese Methode wird aufgerufen, wenn der Ball den Block trifft
+    def hit(self):
+        self.health -= 1
+        
+        # Wenn der harte rote Block noch 1 Leben hat, wird er orange!
+        if self.health == 1 and (self.block_type == "RED" or self.block_type == "R"):
+            ORANGE = (255, 127, 0)
+            self.image.fill(ORANGE)
+            
+        # Gibt True zurück, wenn der Block komplett zerstört ist (0 Leben)
+        return self.health <= 0
         
 
 class Paddle(pygame.sprite.Sprite):
@@ -142,6 +157,7 @@ class PowerUp(pygame.sprite.Sprite):
             "multiball":     {"color": (50, 230, 50),  "char": "M", "shape": "circle"},
             "expand_paddle": {"color": (50, 200, 200), "char": "W", "shape": "circle"},
             "piercing_shot":      {"color": (255, 215, 0),  "char": "P", "shape": "circle"},
+            "sticky_paddle": {"color": (230, 50, 230), "char": "K", "shape": "circle"},
             
             # --- NEGATIVE EFFEKTE (Dreiecke) ---
             "shrink_paddle": {"color": (255, 50, 50),  "char": "C", "shape": "triangle"},

@@ -97,6 +97,8 @@ class Game:
 
         self.reset_paddle()
         
+        self.paddle_sticky = False # NEU: Klebe-Effekt zu Beginn ausschalten
+        
         # ANGEPASST: Ball startet direkt auf der Position des Paddles
         start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8)
         start_ball.attached = True # NEU: Ball anheften
@@ -113,7 +115,7 @@ class Game:
 
     def spawn_powerup(self, x, y, guaranteed=False):
         if guaranteed or random.random() < 0.30:
-            effects = ["expand_paddle", "shrink_paddle", "slow_time", "speed_time", 
+            effects = ["sticky_paddle", "expand_paddle", "shrink_paddle", "slow_time", "speed_time", 
                        "bigger_ball", "smaller_ball", "multiball", "piercing_shot"]
             chosen_effect = random.choice(effects)
             p_up = PowerUp(x, y, chosen_effect)
@@ -124,7 +126,13 @@ class Game:
         now = pygame.time.get_ticks()
         duration = 8000
         
-        if powerup.effect_type == "expand_paddle":
+        if powerup.effect_type == "sticky_paddle":
+            print("Power up - sticky paddle")
+            self.paddle_sticky = True
+            self.paddle.image = pygame.Surface((100, 15))
+            self.paddle.image.fill(YELLOW)
+            self.active_effects["sticky_paddle"] = now + duration
+        elif powerup.effect_type == "expand_paddle":
             print("Power up - larger paddle")
             self.paddle.image = pygame.Surface((160, 15))
             self.paddle.image.fill(GREEN)
@@ -218,8 +226,8 @@ class Game:
                     for ball in self.balls:
                         if ball.attached:
                             ball.attached = False
-                            ball.speed_x = 0.0  # Schnurgerade nach oben
-                            ball.speed_y = -4.0 # Startgeschwindigkeit
+                            ball.speed_x = 0.0  
+                            ball.speed_y = -1 * BALL_SPEED
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == STATE_MENU:
@@ -229,10 +237,11 @@ class Game:
                         self.start_game()
 
     def update(self):
-        # ANGEPASST: Logik läuft NUR im PLAYING-Zustand. Im PAUSED-Zustand friert alles ein.
+        # Logik läuft NUR im PLAYING-Zustand. Im PAUSED-Zustand friert alles ein.
         if self.state == STATE_PLAYING:
             self.check_timers()
             
+            # 1. Am Paddle klebende Bälle exakt positionieren
             for ball in self.balls:
                 if ball.attached:
                     ball.rect.centerx = self.paddle.rect.centerx
@@ -240,61 +249,71 @@ class Game:
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
+            # 2. Alle Sprites aktualisieren (Doppelten Ball-Aufruf entfernt!)
             self.paddle.update()
             self.powerups.update()
             self.blocks.update()
             self.balls.update(self.time_factor)
             
-            # Hier übergeben wir den Zeitfaktor jetzt sauber an die Ballgruppe:
-            self.balls.update(self.time_factor)
-            
+            # 3. Kollisionen und Ereignisse für jeden Ball prüfen
             for ball in list(self.balls):
+                
+                # --- PADDLE-KOLLISION ---
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
-                    hit_pos = ball.rect.centerx - self.paddle.rect.centerx
-                    relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
-                    
-                    # 1. Hier stellst du die absolute Wunsch-Geschwindigkeit des Balls ein!
-                    # Ändere diese Zahl (z.B. auf 5.0 oder 6.0), um das Spieltempo perfekt zu tunen.
-                    BALL_TEMPO = 4.5
-                    
-                    # Anti-Gerade-oben-Schutz: Falls genau die Mitte getroffen wird
-                    if abs(relative_hit) < 0.1:
-                        relative_hit = random.choice([-0.15, 0.15])
-                    
-                    # 2. Horizontalen Speed berechnen (max. 80% des Gesamttempos für flache Winkel)
-                    ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
-                    
-                    # 3. Vertikalen Speed berechnen mit dem Satz des Pythagoras:
-                    # Gesamtgeschwindigkeit^2 = speed_x^2 + speed_y^2
-                    # Daraus folgt: speed_y = sqrt(Gesamtgeschwindigkeit^2 - speed_x^2)
-                    ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
+                    if self.paddle_sticky:
+                        ball.attached = True
+                        ball.rect.bottom = self.paddle.rect.top
+                        ball.x = float(ball.rect.x)
+                        ball.y = float(ball.rect.y)
+                    else:
+                        hit_pos = ball.rect.centerx - self.paddle.rect.centerx
+                        relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                        
+                        if abs(relative_hit) < 0.1:
+                            relative_hit = random.choice([-0.15, 0.15])
+                        
+                        ball.speed_x = relative_hit * (BALL_SPEED * 0.8)
+                        ball.speed_y = -math.sqrt(BALL_SPEED**2 - ball.speed_x**2)
 
+                # --- BLOCK-KOLLISION ---
                 hit_blocks = pygame.sprite.spritecollide(ball, self.blocks, False)
                 if hit_blocks:
                     if not ball.is_piercing:
                         ball.speed_y *= -1
+                        
                     for block in hit_blocks:
                         block.health -= 1
+                        
+                        # KORREKTUR: Prüft flexibel auf Zahl 2 ODER Text '2' ODER 'R'
+                        if block.block_type in [2, '2', 'R', 'RED']:
+                            # Falls er noch lebt, färbe ihn um
+                            if block.health > 0:
+                                block.image.fill(ORANGE)
+                        
+                        # Erst bei 0 Leben zerstören
                         if block.health <= 0:
                             self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
                             block.kill()
 
+                # --- AUS-DEM-SPIEL-PRÜFUNG ---
                 if ball.rect.top > SCREEN_HEIGHT:
                     ball.kill()
 
+            # 4. Power-Ups einsammeln
             collected_powerups = pygame.sprite.spritecollide(self.paddle, self.powerups, True)
             for p_up in collected_powerups:
                 self.apply_powerup(p_up)
 
+            # 5. Game Over Prüfung (Keine Bälle mehr auf dem Feld)
             if len(self.balls) == 0:
                 self.state = STATE_MENU
 
-            # Level geschafft Prüfung
+            # 6. Level geschafft Prüfung
             if len(self.blocks) == 0:
                 next_level = self.current_level_num + 1
                 if next_level > self.unlocked_level:
                     self.unlocked_level = next_level
-                    self.save_game() # NEU: Fortschritt speichern, sobald ein neues Maximum erreicht wird
+                    self.save_game() # Fortschritt speichern
                 
                 if os.path.exists(os.path.join("levels", get_level_name(next_level))):
                     self.current_level_num = next_level
