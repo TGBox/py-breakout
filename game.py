@@ -221,13 +221,22 @@ class Game:
                         self.state = STATE_PAUSED
                     pygame.display.iconify() # Minimiert das Pygame-Fenster in die Taskleiste
                 
-                # NEU: Leertaste schießt den angehefteten Ball ab
                 if event.key == pygame.K_SPACE and self.state == STATE_PLAYING:
                     for ball in self.balls:
                         if ball.attached:
                             ball.attached = False
-                            ball.speed_x = 0.0  
-                            ball.speed_y = -1 * BALL_SPEED
+                            
+                            # NEU: Abschusswinkel exakt aus der Klebe-Position berechnen!
+                            hit_pos = getattr(ball, "sticky_offset_x", 0)
+                            relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                            
+                            BALL_TEMPO = 4.0 # Nutzt dein exaktes Basis-Balltempo aus der update()
+                            if abs(relative_hit) < 0.1:
+                                relative_hit = random.choice([-0.15, 0.15])
+                            
+                            # Berechnet die schräge Flugbahn
+                            ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
+                            ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == STATE_MENU:
@@ -244,7 +253,10 @@ class Game:
             # 1. Am Paddle klebende Bälle exakt positionieren
             for ball in self.balls:
                 if ball.attached:
-                    ball.rect.centerx = self.paddle.rect.centerx
+                    # Holt den gespeicherten Abstand. Falls es der Spielstart ist, ist er 0 (Mitte)
+                    offset = getattr(ball, "sticky_offset_x", 0)
+                    
+                    ball.rect.centerx = self.paddle.rect.centerx + offset
                     ball.rect.bottom = self.paddle.rect.top
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
@@ -262,6 +274,10 @@ class Game:
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
                     if self.paddle_sticky:
                         ball.attached = True
+                        
+                        # NEU: Wir merken uns exakt, wo der Ball gelandet ist (Abstand zur Schlägermitte)
+                        ball.sticky_offset_x = ball.rect.centerx - self.paddle.rect.centerx
+                        
                         ball.rect.bottom = self.paddle.rect.top
                         ball.x = float(ball.rect.x)
                         ball.y = float(ball.rect.y)
