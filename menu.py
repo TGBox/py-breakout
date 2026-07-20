@@ -49,7 +49,8 @@ class MainMenu:
             "LEVEL_SELECT": Button(center_x, start_y + spacing,     b_width, b_height, "Level Auswählen", (40, 100, 180), (60, 130, 230)),
             "EDITOR":       Button(center_x, start_y + spacing * 2, b_width, b_height, "Level Editor", (120, 50, 150), (160, 70, 200)),
             "RESET":        Button(center_x, start_y + spacing * 3, b_width, b_height, "Fortschritt Löschen", (160, 50, 50), (210, 70, 70)),
-            "QUIT":         Button(center_x, start_y + spacing * 4, b_width, b_height, "Beenden", (70, 70, 70), (100, 100, 100))
+            "QUIT":         Button(center_x, start_y + spacing * 4, b_width, b_height, "Beenden", (70, 70, 70), (100, 100, 100)),
+            "HIGHSCORE":    Button(center_x, start_y + spacing * 5, b_width, b_height, "Highscores", (33, 33, 33), (133, 133, 133))
         }
         
         self.title_font = pygame.font.SysFont(None, 54, bold=True)
@@ -86,7 +87,7 @@ class MainMenu:
 
 
 class LevelSelectionMenu:
-    """Deine bestehende Levelauswahl – jetzt mit Zurück-Button"""
+    """Deine bestehende Levelauswahl - jetzt mit Zurück-Button"""
     def __init__(self, screen):
         self.screen = screen
         self.font = pygame.font.SysFont(None, 36)

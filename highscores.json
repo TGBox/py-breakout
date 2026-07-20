@@ -1,0 +1,46 @@
+{
+    "Level001.txt": [
+        {
+            "name": "Daniel",
+            "score": 9143
+        },
+        {
+            "name": "Daniel",
+            "score": 8476
+        },
+        {
+            "name": "Daniel",
+            "score": 8295
+        }
+    ],
+    "Level002.txt": [
+        {
+            "name": "Daniel",
+            "score": 8354
+        }
+    ],
+    "Level003.txt": [
+        {
+            "name": "Daniel",
+            "score": 7521
+        }
+    ],
+    "Level004.txt": [
+        {
+            "name": "Daniel",
+            "score": 7818
+        }
+    ],
+    "Level005.txt": [
+        {
+            "name": "Daniel",
+            "score": 7203
+        }
+    ],
+    "Level006.txt": [
+        {
+            "name": "Daniel",
+            "score": 7369
+        }
+    ]
+}
