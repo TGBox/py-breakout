@@ -12,6 +12,12 @@ from game import Game
 # DONE TODO: FEATURE: Add a highscore system so that players can record their best runs.
 # DONE TODO: FEATURE: Add a screen that tells the player when a level has been completed. Should contain the current level number, (score?), and buttons to get back to the main menu, the editor or play the next level.
 # TODO: BUG: The highscore view is not working as intended! FIX!
+# TODO: BUG: The health calculation for the larger blocks does not change their colors accordingly!
+# TODO: BUG: The power up blocks should only spawn power ups. No power downs!
+# TODO: FEATURE: Add new block type, that will only spawn power downs! (Needs to get factored in, when calculating the win condition. Every other block must be hit to win; except for them!)
+# TODO: BUG: Power ups should not get inverted, when picking up the equivalent power down! This should only revert the state to the regular state.
+# TODO: BUG: When picking up a slow motion power up, the score keeps decreasing with the regular rate. Should get adjusted to also only rise with the lower speed while this power up is active!
+# TODO: FEATURE: Add new power up that increases points gained or decreases points lost. Add equivalent power down element!
 # TODO: FEATURE: Add a difficulty setting that will influence game speed, block health and power up distribution.
 # TODO: FEATURE: Add more power ups.
 # TODO: FEATURE: Add a secure border power up. This will create a temporary line beneath our paddle and will deflect any ball that we might miss with our paddle back into the game area.
