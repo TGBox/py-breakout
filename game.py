@@ -166,11 +166,17 @@ class Game:
         self.paddle.image.fill(WHITE)
         self.paddle.rect = self.paddle.image.get_rect(centerx=pos[0], bottom=SCREEN_HEIGHT-30)
 
+    # Positive Effekte (echte "Power-Ups") vs. negative Effekte ("Power-Downs").
+    POSITIVE_EFFECTS = ["sticky_paddle", "expand_paddle", "slow_time",
+                        "bigger_ball", "multiball", "piercing_shot"]
+    NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball"]
+
     def spawn_powerup(self, x, y, guaranteed=False):
         spawn_chance = 1.0 if guaranteed else 0.15
         if random.random() < spawn_chance:
-            effects = ["sticky_paddle", "expand_paddle", "shrink_paddle", "slow_time", "speed_time", 
-                       "bigger_ball", "smaller_ball", "multiball", "piercing_shot"]
+            # Garantierte Drops (grüne PowerUp-Blöcke) dürfen NUR positive Effekte auswerfen.
+            # Normale Blöcke droppen weiterhin zufällig aus positiven und negativen Effekten.
+            effects = self.POSITIVE_EFFECTS if guaranteed else (self.POSITIVE_EFFECTS + self.NEGATIVE_EFFECTS)
             chosen_effect = random.choice(effects)
             p_up = PowerUp(x, y, chosen_effect)
             self.powerups.add(p_up)
@@ -307,7 +313,7 @@ class Game:
                     self.running = False
                 
                 elif action == "HIGHSCORE":
-                    self.state = "STATE_HIGHSCORE"
+                    self.state = STATE_HIGHSCORE
 
             # ==========================================
             # ZUSTAND: LEVELAUSWAHL (STATE_LEVEL_SELECT)
@@ -327,7 +333,7 @@ class Game:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.state = STATE_MENU
 
-            elif self.state == "STATE_HIGHSCORES":
+            elif self.state == STATE_HIGHSCORE:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mouse_pos = pygame.mouse.get_pos()
                     
@@ -459,13 +465,9 @@ class Game:
                         ball.speed_y *= -1
                         
                     for block in hit_blocks:
-                        block.health -= 1
+                        destroyed = block.hit()
                         
-                        if block.block_type in [2, '2', 'R', 'RED']:
-                            if block.health > 0:
-                                block.image.fill(ORANGE)
-                        
-                        if block.health <= 0:
+                        if destroyed:
                             self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
                             block.kill()
 
@@ -599,7 +601,7 @@ class Game:
         elif self.state == STATE_MENU:
             self.menu.draw(self.screen, self.unlocked_level)
 
-        elif self.state == "STATE_HIGHSCORES":
+        elif self.state == STATE_HIGHSCORE:
             title_font = pygame.font.SysFont(None, 45, bold=True)
             title_surf = title_font.render("HIGHSCORE-BESTENLISTE", True, YELLOW)
             self.screen.blit(title_surf, (SCREEN_WIDTH // 2 - title_surf.get_width() // 2, 40))

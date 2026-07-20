@@ -17,6 +17,14 @@
         {
             "name": "Daniel",
             "score": 8354
+        },
+        {
+            "name": "Daniel",
+            "score": 8309
+        },
+        {
+            "name": "Daniel",
+            "score": 8249
         }
     ],
     "Level003.txt": [
@@ -41,6 +49,12 @@
         {
             "name": "Daniel",
             "score": 7369
+        }
+    ],
+    "Level008.txt": [
+        {
+            "name": "Daniel",
+            "score": 6175
         }
     ]
 }

@@ -1,10 +1,21 @@
 import pygame
 from settings import *
 
+# Farbe je verbleibendem Leben für die mehrschlägigen Blöcke (Typen '2'-'5').
+# So bekommt jeder Treffer sichtbar eine "schwächere" Farbe, unabhängig davon,
+# mit wie viel Leben der Block gestartet ist.
+BLOCK_HEALTH_COLORS = {
+    1: YELLOW,
+    2: ORANGE_YELLOW,
+    3: ORANGE,
+    4: REDDISH_ORANGE,
+    5: RED,
+}
+
 class Block(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, block_type):
         super().__init__()
-        self.block_type = block_type # Speichert z.B. "RED", "ORANGE" oder "R", "O"
+        self.block_type = block_type # '1'-'5' = normale/starke Blöcke, 'P' = PowerUp-Block
         self.width = BLOCK_WIDTH
         self.height = BLOCK_HEIGHT
         
@@ -18,19 +29,9 @@ class Block(pygame.sprite.Sprite):
         # Farbe und Eigenschaften basierend auf dem Typ setzen
         if self.block_type == '1':
             self.image.fill(GREEN)
-        elif self.block_type == '2':
-            self.image.fill(YELLOW)
-            self.health = 2
-            self.image.fill(ORANGE_YELLOW)
-        elif self.block_type == "3":
-            self.health = 3
-            self.image.fill(ORANGE)
-        elif self.block_type == "4":
-            self.health = 4
-            self.image.fill(REDDISH_ORANGE)
-        elif self.block_type == "5":
-            self.health = 5
-            self.image.fill(RED)
+        elif self.block_type in ('2', '3', '4', '5'):
+            self.health = int(self.block_type)
+            self.image.fill(BLOCK_HEALTH_COLORS[self.health])
         elif self.block_type == 'P':
             self.image.fill(BLUE)
             self.is_powerup = True # Lässt später ein Power-Up fallen
@@ -38,14 +39,13 @@ class Block(pygame.sprite.Sprite):
         # Hitbox (Rect) setzen und positionieren
         self.rect = self.image.get_rect(topleft=(x, y))
         
-    # NEU: Diese Methode wird aufgerufen, wenn der Ball den Block trifft
+    # Diese Methode wird aufgerufen, wenn der Ball den Block trifft
     def hit(self):
         self.health -= 1
         
-        # Wenn der harte rote Block noch 1 Leben hat, wird er orange!
-        if self.health == 1 and (self.block_type == "RED" or self.block_type == "R"):
-            ORANGE = (255, 127, 0)
-            self.image.fill(ORANGE)
+        # Solange der Block noch steht, Farbe an das verbleibende Leben anpassen
+        if self.health >= 1 and self.health in BLOCK_HEALTH_COLORS:
+            self.image.fill(BLOCK_HEALTH_COLORS[self.health])
             
         # Gibt True zurück, wenn der Block komplett zerstört ist (0 Leben)
         return self.health <= 0
