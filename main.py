@@ -14,6 +14,7 @@ from game import Game
 # DONE TODO: BUG: The highscore view is not working as intended! FIX!
 # DONE TODO: BUG: The health calculation for the larger blocks does not change their colors accordingly!
 # DONE TODO: BUG: The power up blocks should only spawn power ups. No power downs!
+# TODO: FEATURE: Before a timed power up or power down runs out, there should be some kind of visual feedback to alter the player that a change is going to happen. Currently when the player has e.g. the larger paddle, it can happen, that the ball travels towards one far end of the paddle, and right before contact would have been made, the paddle gets shortened and the ball misses the paddle.
 # TODO: BUG: When all levels have been cleared, the game tries to load the non-existing next level and fails, when the user presses the play button instead of selecting a level.
 # TODO: FEATURE: Add new block type, that will only spawn power downs! (Needs to get factored in, when calculating the win condition. Every other block must be hit to win; except for them!)
 # TODO: BUG: Power ups should not get inverted, when picking up the equivalent power down! This should only revert the state to the regular state.
