@@ -33,6 +33,9 @@ from game import Game
 # TODO: FEATURE: Adjust the color scheme for blocks in order for them to be visually different from each other and so that they indicate their health.
 # TODO: BUG: Adjust colors for the power ups, so that the text on them is still visible, even if they have a darker background color.
 
+# TODO: Combine the output of the highscores and the user progress into a single json file.
+# TODO: Remove the highscores.json and save_progress.json files from the repository. They should not get versioned!
+
 if __name__ == "__main__":
     pygame.init()
     game = Game()
