@@ -29,7 +29,7 @@ class LevelEditor:
         # Aktuell ausgewählter Block-Typ zum Platzieren
         self.current_type = "1"
         
-        self.types = {
+        self.types: dict[str, dict[str, tuple[int, int, int] | str]] = {
             "0": {"color": BLUE, "label": "Radiergummi / Leer (Taste 0)"},
             "1": {"color": YELLOW, "label": "Normaler Block (Taste 1)"},
             "2": {"color": ORANGE_YELLOW, "label": "Starker Block (2 Leben) (Taste 2)"},
@@ -56,7 +56,7 @@ class LevelEditor:
             self.draw()
             self.clock.tick(60)
 
-    def handle_event(self, event):
+    def handle_event(self, event: pygame.event.Event):
         """Verarbeitet EINZELNE Events aus der Hauptschleife (wichtig fürs Hauptspiel)"""
         if event.type == pygame.KEYDOWN:
             # Typen-Auswahl per Tastatur

@@ -1,26 +1,30 @@
+from __future__ import annotations
+from typing import Any
+
+from pygame import Rect, sprite, Surface
 import pygame
 from settings import *
 
 # Farbe je verbleibendem Leben für die mehrschlägigen Blöcke (Typen '2'-'5').
 # So bekommt jeder Treffer sichtbar eine "schwächere" Farbe, unabhängig davon,
 # mit wie viel Leben der Block gestartet ist.
-BLOCK_HEALTH_COLORS = {
+BLOCK_HEALTH_COLORS: dict[int, tuple[int, int, int]] = {
     1: YELLOW,
     2: ORANGE_YELLOW,
     3: ORANGE,
     4: REDDISH_ORANGE,
-    5: RED,
+    5: RED
 }
 
-class Block(pygame.sprite.Sprite):
-    def __init__(self, x, y, width, height, block_type):
-        super().__init__()
+class Block(sprite.Sprite):
+    def __init__(self, x: int, y: int, width: int, height: int, block_type: str, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
         self.block_type = block_type # '1'-'5' = normale/starke Blöcke, 'P' = PowerUp-Block
         self.width = BLOCK_WIDTH
         self.height = BLOCK_HEIGHT
         
 
-        self.image: pygame.Surface = pygame.Surface((width, height))
+        self.image: Surface = Surface((width, height))
         
         # Standardwerte
         self.health = 1
@@ -51,15 +55,15 @@ class Block(pygame.sprite.Sprite):
         return self.health <= 0
         
 
-class Paddle(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__()
+class Paddle(sprite.Sprite):
+    def __init__(self, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
         self.width = 100
         self.height = 15
-        self.image = pygame.Surface((self.width, self.height))
+        self.image = Surface((self.width, self.height))
         self.image.fill(WHITE) # Nutzt WHITE aus settings.py
         
-        self.rect: pygame.Rect = self.image.get_rect()
+        self.rect: Rect = self.image.get_rect()
         self.rect.centerx = SCREEN_WIDTH // 2
         self.rect.bottom = SCREEN_HEIGHT - 30
         self.speed = 8
@@ -81,10 +85,10 @@ class Paddle(pygame.sprite.Sprite):
 # In sprites.py die Ball-Klasse ersetzen:
 
 class Ball(pygame.sprite.Sprite):
-    def __init__(self, x, y, speed_x=5, speed_y=-5):
-        super().__init__()
+    def __init__(self, x: int, y: int, speed_x: int = 5, speed_y: int = -5, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
         self.radius = 8
-        self.is_piercing = False
+        self.is_piercing: bool = False
         
         # NEU: Standardmäßig ist der Ball erst einmal NICHT festgeklebt (wichtig für Multiball)
         self.attached = False 
@@ -101,7 +105,7 @@ class Ball(pygame.sprite.Sprite):
         self.speed_y = float(speed_y)
 
 
-    def set_size(self, new_radius):
+    def set_size(self, new_radius: int):
         self.radius = new_radius
         old_center = self.rect.center
         self.image: pygame.Surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
@@ -112,13 +116,13 @@ class Ball(pygame.sprite.Sprite):
         self.x = float(self.rect.x)
         self.y = float(self.rect.y)
 
-    def set_piercing(self, piercing):
+    def set_piercing(self, piercing: bool):
         self.is_piercing = piercing
         color = RED if piercing else PURPLE
         pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
 
     # ANGEPASST: update() nimmt jetzt direkt den Zeitfaktor entgegen    
-    def update(self, time_factor=1.0):
+    def update(self, time_factor: float = 1.0):
         # NEU: Wenn der Ball angeheftet ist, überspringen wir die Eigenbewegung!
         if self.attached:
             return
@@ -146,8 +150,8 @@ class Ball(pygame.sprite.Sprite):
             self.speed_y *= -1
             
 class PowerUp(pygame.sprite.Sprite):
-    def __init__(self, x, y, powerup_type):
-        super().__init__()
+    def __init__(self, x: int, y: int, powerup_type: str, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
         self.effect_type = powerup_type
         self.size = 28  # Ein winziges bisschen größer für bessere Form-Erkennung
         
@@ -155,7 +159,7 @@ class PowerUp(pygame.sprite.Sprite):
         print(f"[PowerUp-Info] Typ '{self.effect_type}' ist gespawnt!")
 
         # CONFIG JETZT MIT ZUSÄTZLICHER "shape"-EIGENSCHAFT
-        self.config = {
+        self.config: dict[str, dict[str, tuple[int, int, int] | str]] = {
             # --- POSITIVE EFFEKTE (Kreise) ---
             "slow_time":     {"color": (50, 150, 255), "char": "S", "shape": "circle"},
             "bigger_ball":     {"color": (50, 10, 50), "char": "B", "shape": "circle"},
@@ -178,7 +182,7 @@ class PowerUp(pygame.sprite.Sprite):
         
         # Schrifteinstellungen vorbereiten
         font = pygame.font.SysFont(None, 18, bold=True)
-        text_surf = font.render(cfg["char"], True, (0, 0, 0))
+        text_surf = font.render(str(cfg["char"]), True, (0, 0, 0))
         
         # =======================================================
         # DYNAMISCHES ZEICHNEN JE NACH FORM

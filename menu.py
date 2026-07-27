@@ -1,13 +1,12 @@
 # menu.py
+from pygame import Rect, Surface
 import pygame
 import os
-import random
-import math
 from settings import *
 
 class Button:
     """Universelle Button-Klasse für das Hauptmenü"""
-    def __init__(self, x, y, width, height, text, base_color, hover_color, text_color=WHITE):
+    def __init__(self, x: int, y: int, width: int, height: int, text: str, base_color: str | tuple[int, int, int], hover_color: str | tuple[int, int, int], text_color: str | tuple[int, int, int] = "WHITE"):
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
         self.base_color = base_color
@@ -16,7 +15,7 @@ class Button:
         self.current_color = base_color
         self.font = pygame.font.SysFont(None, 28, bold=True)
 
-    def draw(self, screen):
+    def draw(self, screen: Surface):
         # Zeichnet ein abgerundetes Rechteck mit weißem Rahmen
         pygame.draw.rect(screen, self.current_color, self.rect, border_radius=8)
         pygame.draw.rect(screen, WHITE, self.rect, width=2, border_radius=8)
@@ -26,7 +25,7 @@ class Button:
         text_rect = text_surf.get_rect(center=self.rect.center)
         screen.blit(text_surf, text_rect)
 
-    def check_hover(self, mouse_pos):
+    def check_hover(self, mouse_pos: tuple[float, float]):
         if self.rect.collidepoint(mouse_pos):
             self.current_color = self.hover_color
             return True
@@ -56,7 +55,7 @@ class MainMenu:
         self.title_font = pygame.font.SysFont(None, 54, bold=True)
         self.info_font = pygame.font.SysFont(None, 22)
 
-    def draw(self, screen, unlocked_level):
+    def draw(self, screen: Surface, unlocked_level: int):
         # Titel (Nutzt dein gelb aus den Settings)
         title_surf = self.title_font.render("BREAKOUT CHAMPION", True, YELLOW)
         title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, 80))
@@ -71,7 +70,7 @@ class MainMenu:
         for button in self.buttons.values():
             button.draw(screen)
 
-    def handle_event(self, event):
+    def handle_event(self, event: pygame.event.Event):
         mouse_pos = pygame.mouse.get_pos()
         
         if event.type == pygame.MOUSEMOTION:
@@ -88,13 +87,13 @@ class MainMenu:
 
 class LevelSelectionMenu:
     """Deine bestehende Levelauswahl - jetzt mit Zurück-Button"""
-    def __init__(self, screen):
+    def __init__(self, screen: Surface):
         self.screen = screen
         self.font = pygame.font.SysFont(None, 36)
         self.title_font = pygame.font.SysFont(None, 60)
-        self.levels = []
+        self.levels: list[str] = []
         self.detect_levels()
-        self.buttons = []
+        self.buttons: list[tuple[Rect, int, bool]] = []
         
         # NEU: Der Zurück-Button wird unten in der Mitte platziert
         self.back_btn_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 80, 200, 45)
@@ -108,7 +107,7 @@ class LevelSelectionMenu:
         if not self.levels:
             self.levels = ["level1.txt"]
 
-    def draw(self, unlocked_level):
+    def draw(self, unlocked_level: int):
         self.detect_levels()  
         self.buttons.clear()
         
@@ -124,7 +123,7 @@ class LevelSelectionMenu:
         mouse_pos = pygame.mouse.get_pos()
         
         # Level-Grid zeichnen
-        for idx, level_file in enumerate(self.levels):
+        for idx, _level_file in enumerate(self.levels):
             level_num = idx + 1
             is_unlocked = level_num <= unlocked_level
             
@@ -166,7 +165,7 @@ class LevelSelectionMenu:
         self.screen.blit(back_txt, (self.back_btn_rect.centerx - back_txt.get_width() // 2, 
                                     self.back_btn_rect.centery - back_txt.get_height() // 2))
 
-    def handle_click(self, mouse_pos):
+    def handle_click(self, mouse_pos: tuple[float, float]):
         # NEU: Erst prüfen, ob der Zurück-Knopf angeklickt wurde
         if self.back_btn_rect.collidepoint(mouse_pos):
             return "BACK"

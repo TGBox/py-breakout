@@ -1,4 +1,5 @@
 import math
+from typing import Any, cast
 import pygame
 import os
 import json
@@ -67,16 +68,16 @@ class Game:
         self.editor = LevelEditor(self.screen)
         
         # Sprite-Gruppen
-        self.all_sprites = pygame.sprite.Group()
-        self.blocks = pygame.sprite.Group()
-        self.powerups = pygame.sprite.Group()
-        self.balls = pygame.sprite.Group()
+        self.all_sprites: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.blocks: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.powerups: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.balls: pygame.sprite.Group[Any] = pygame.sprite.Group()
         
-        self.paddle = Paddle()
-        self.time_factor = 1.0 
-        self.active_effects = {}
+        self.paddle: Paddle = Paddle()
+        self.time_factor: float = 1.0 
+        self.active_effects: dict[str, int] = {}
     
-    def load_highscores(self):
+    def load_highscores(self) -> dict[str, list[dict[str, Any]]]:
         """Lädt die Highscores aus einer JSON-Datei."""
         if os.path.exists("highscores.json"):
             try:
@@ -171,18 +172,18 @@ class Game:
                         "bigger_ball", "multiball", "piercing_shot"]
     NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball"]
 
-    def spawn_powerup(self, x, y, guaranteed=False):
-        spawn_chance = 1.0 if guaranteed else 0.15
+    def spawn_powerup(self, x: int, y: int, guaranteed: bool = False):
+        spawn_chance: float = 1.0 if guaranteed else 0.15
         if random.random() < spawn_chance:
             # Garantierte Drops (grüne PowerUp-Blöcke) dürfen NUR positive Effekte auswerfen.
             # Normale Blöcke droppen weiterhin zufällig aus positiven und negativen Effekten.
             effects = self.POSITIVE_EFFECTS if guaranteed else (self.POSITIVE_EFFECTS + self.NEGATIVE_EFFECTS)
             chosen_effect = random.choice(effects)
-            p_up = PowerUp(x, y, chosen_effect)
+            p_up: PowerUp = PowerUp(x, y, chosen_effect)
             self.powerups.add(p_up)
             self.all_sprites.add(p_up)
 
-    def apply_powerup(self, powerup):
+    def apply_powerup(self, powerup: PowerUp):
         self.powerups_collected_count += 1
         now = pygame.time.get_ticks()
         duration = 8000
@@ -268,7 +269,7 @@ class Game:
             for ball in self.balls: ball.set_piercing(False)
             del self.active_effects["piercing"]
 
-    def calculate_score(self, elapsed_seconds):
+    def calculate_score(self, elapsed_seconds: float):
         """Berechnet den Score anhand einer übergebenen Zeit."""
         base_score = 10000
         time_penalty = int(elapsed_seconds * 12)
@@ -475,7 +476,7 @@ class Game:
                 if ball.rect.top > SCREEN_HEIGHT:
                     ball.kill()
 
-            collected_powerups = pygame.sprite.spritecollide(self.paddle, self.powerups, True)
+            collected_powerups = pygame.sprite.spritecollide(cast(Any, self.paddle), self.powerups, True)
             for p_up in collected_powerups:
                 self.apply_powerup(p_up)
 

@@ -6,6 +6,14 @@
         },
         {
             "name": "Daniel",
+            "score": 9092
+        },
+        {
+            "name": "Daniel",
+            "score": 8847
+        },
+        {
+            "name": "Daniel",
             "score": 8476
         },
         {
@@ -14,6 +22,10 @@
         }
     ],
     "Level002.txt": [
+        {
+            "name": "Daniel",
+            "score": 9021
+        },
         {
             "name": "Daniel",
             "score": 8354
@@ -30,6 +42,10 @@
     "Level003.txt": [
         {
             "name": "Daniel",
+            "score": 7734
+        },
+        {
+            "name": "Daniel",
             "score": 7521
         }
     ],
@@ -37,9 +53,17 @@
         {
             "name": "Daniel",
             "score": 7818
+        },
+        {
+            "name": "Daniel",
+            "score": 5507
         }
     ],
     "Level005.txt": [
+        {
+            "name": "Daniel",
+            "score": 7356
+        },
         {
             "name": "Daniel",
             "score": 7203
@@ -49,6 +73,10 @@
         {
             "name": "Daniel",
             "score": 7369
+        },
+        {
+            "name": "Daniel",
+            "score": 7095
         }
     ],
     "Level008.txt": [
@@ -80,10 +108,18 @@
     "Level011.txt": [
         {
             "name": "Daniel",
+            "score": 6113
+        },
+        {
+            "name": "Daniel",
             "score": 5834
         }
     ],
     "Level007.txt": [
+        {
+            "name": "Daniel",
+            "score": 7356
+        },
         {
             "name": "Daniel",
             "score": 7341
