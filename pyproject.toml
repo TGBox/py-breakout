@@ -1,0 +1,10 @@
+[project]
+name = "py-breakout"
+version = "1.0.0"
+description = "A small python breakout game."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pygame-ce==2.5.7",
+    "setuptools==82.0.1"
+]

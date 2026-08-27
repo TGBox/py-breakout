@@ -38,23 +38,29 @@ class MainMenu:
     """Das neue, interaktive Hauptmenü"""
     def __init__(self):
         # Nutzt direkt die Konstanten aus deiner settings.py
-        b_width, b_height = 280, 45
-        start_y = 200
-        spacing = 60
+        b_width, b_height = 280, 42
+        start_y = 175
+        spacing = 52
         center_x = SCREEN_WIDTH // 2 - b_width // 2
         
         # Alle Buttons mit ihren Farbstilen anlegen
         self.buttons = {
             "PLAY":         Button(center_x, start_y,             b_width, b_height, "Spiel Starten", (50, 150, 50), (70, 200, 70)),
             "LEVEL_SELECT": Button(center_x, start_y + spacing,     b_width, b_height, "Level Auswählen", (40, 100, 180), (60, 130, 230)),
-            "EDITOR":       Button(center_x, start_y + spacing * 2, b_width, b_height, "Level Editor", (120, 50, 150), (160, 70, 200)),
-            "RESET":        Button(center_x, start_y + spacing * 3, b_width, b_height, "Fortschritt Löschen", (160, 50, 50), (210, 70, 70)),
-            "QUIT":         Button(center_x, start_y + spacing * 4, b_width, b_height, "Beenden", (70, 70, 70), (100, 100, 100)),
-            "HIGHSCORE":    Button(center_x, start_y + spacing * 5, b_width, b_height, "Highscores", (33, 33, 33), (133, 133, 133))
+            "DIFFICULTY":   Button(center_x, start_y + spacing * 2, b_width, b_height, "Schwierigkeit: Normal", (200, 140, 40), (230, 170, 60)),
+            "EDITOR":       Button(center_x, start_y + spacing * 3, b_width, b_height, "Level Editor", (120, 50, 150), (160, 70, 200)),
+            "HIGHSCORE":    Button(center_x, start_y + spacing * 4, b_width, b_height, "Highscores", (33, 33, 33), (133, 133, 133)),
+            "RESET":        Button(center_x, start_y + spacing * 5, b_width, b_height, "Fortschritt Löschen", (160, 50, 50), (210, 70, 70)),
+            "QUIT":         Button(center_x, start_y + spacing * 6, b_width, b_height, "Beenden", (70, 70, 70), (100, 100, 100)),
         }
         
         self.title_font = pygame.font.SysFont(None, 54, bold=True)
         self.info_font = pygame.font.SysFont(None, 22)
+
+    def set_difficulty_label(self, difficulty_name):
+        label = DIFFICULTY_SETTINGS.get(difficulty_name, {}).get("label", "Normal")
+        self.buttons["DIFFICULTY"].text = f"Schwierigkeit: {label}"
+
 
     def draw(self, screen, unlocked_level):
         # Titel (Nutzt dein gelb aus den Settings)

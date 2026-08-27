@@ -5,24 +5,16 @@ import json
 import random
 from settings import *
 from level_manager import LevelManager
-from sprites import Paddle, Ball, PowerUp
+from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder
 from menu import LevelSelectionMenu, MainMenu
 from editor import LevelEditor
 
 def get_level_name(lvl_nr: int) -> str:
-    """Method to take the level number int and convert it to the corresponding level file name.
-
-    Args:
-        lvl_nr (int): The current level number.
-
-    Returns:
-        str: The level file name for the given level number.
-    """
     if lvl_nr <= 9:
         return f"Level00{lvl_nr}.txt"
     elif lvl_nr > 9 and lvl_nr <= 99:
         return f"Level0{lvl_nr}.txt"
-    else: # lvl_nr > 99
+    else:
         return f"Level{lvl_nr}.txt"
 
 class Game:
@@ -36,16 +28,15 @@ class Game:
         # Level-Verwaltung
         self.level_manager = LevelManager()
         self.current_level_num = 1
-        self.unlocked_level = 1 # Der Spielfortschritt des Spielers
+        self.unlocked_level = 1
+        self.difficulty = DIFFICULTY_NORMAL
+        self.highscores = {}
         
-        # Spielstand laden.
-        self.load_game()
-        
-        # Highscores laden
-        self.highscores = self.load_highscores()
+        # Unified Save & Load
+        self.load_game_data()
         self.highscore_view_level = 1
         
-        # Highscore-Rechtecke für Klicks definieren
+        # Highscore-Rechtecke
         self.hs_prev_rect = pygame.Rect(SCREEN_WIDTH // 2 - 140, 110, 40, 35)
         self.hs_next_rect = pygame.Rect(SCREEN_WIDTH // 2 + 100, 110, 40, 35)
         self.hs_delete_rect = pygame.Rect(SCREEN_WIDTH // 2 - 210, SCREEN_HEIGHT - 80, 200, 45)
@@ -56,13 +47,15 @@ class Game:
         self.elapsed_seconds_at_win = 0.0
         self.paddle_hits_count = 0
         self.powerups_collected_count = 0
+        self.score_multiplier = 1.0
         self.final_score = 0
         self.qualifies_for_highscores = False
         self.is_score_saved = False
         self.player_name = ""
         
-        # Menü initialisieren
+        # Menü & Editor
         self.menu = MainMenu()
+        self.menu.set_difficulty_label(self.difficulty)
         self.level_selection_menu = LevelSelectionMenu(self.screen)
         self.editor = LevelEditor(self.screen)
         
@@ -71,66 +64,84 @@ class Game:
         self.blocks = pygame.sprite.Group()
         self.powerups = pygame.sprite.Group()
         self.balls = pygame.sprite.Group()
+        self.particles = pygame.sprite.Group()
+        self.secure_borders = pygame.sprite.Group()
         
         self.paddle = Paddle()
         self.time_factor = 1.0 
         self.active_effects = {}
-    
-    def load_highscores(self):
-        """Lädt die Highscores aus einer JSON-Datei."""
-        if os.path.exists("highscores.json"):
+        
+        # Visual Background Stars & Fireworks
+        self.bg_stars = [
+            [random.randint(0, SCREEN_WIDTH), random.randint(0, SCREEN_HEIGHT), random.uniform(0.2, 1.2)]
+            for _ in range(50)
+        ]
+        self.fireworks_timer = 0
+
+    def load_game_data(self):
+        """Lädt alle Spieldaten aus game_data.json mit Abwärtskompatibilität."""
+        if os.path.exists("game_data.json"):
             try:
-                with open("highscores.json", "r") as file:
-                    return json.load(file)
+                with open("game_data.json", "r") as file:
+                    data = json.load(file)
+                    self.unlocked_level = data.get("unlocked_level", 1)
+                    self.difficulty = data.get("difficulty", DIFFICULTY_NORMAL)
+                    self.highscores = data.get("highscores", {})
+                print(f"[Load] game_data.json geladen. Fortschritt: Level {self.unlocked_level}")
+                return
             except Exception as e:
-                print(f"[Highscore Load Fehler] {e}")
-                return {}
-        return {}
+                print(f"[Load-Fehler] game_data.json beschädigt: {e}")
 
-    def save_highscores(self):
-        """Speichert die Highscores in eine JSON-Datei."""
-        try:
-            with open("highscores.json", "w") as file:
-                json.dump(self.highscores, file, indent=4)
-        except Exception as e:
-            print(f"[Highscore Save Fehler] {e}")
-
-    def save_game(self):
-        """Speichert den aktuellen Fortschritt in einer JSON-Datei."""
-        save_data = {
-            "unlocked_level": self.unlocked_level
-        }
-        try:
-            with open("save_progress.json", "w") as file:
-                json.dump(save_data, file, indent=4)
-            print(f"[Save] Fortschritt gespeichert! Höchstes Level: {self.unlocked_level}")
-        except Exception as e:
-            print(f"[Save-Fehler] Konnte Spielstand nicht speichern: {e}")
-
-    def load_game(self):
-        """Lädt den Fortschritt. Falls keine Datei existiert, startet der Spieler bei Level 1."""
+        # Fallback & Migration von alten JSON-Dateien
         if os.path.exists("save_progress.json"):
             try:
                 with open("save_progress.json", "r") as file:
                     save_data = json.load(file)
                     self.unlocked_level = save_data.get("unlocked_level", 1)
-                print(f"[Load] Spielstand erfolgreich geladen. Freigeschaltet bis Level: {self.unlocked_level}")
             except Exception as e:
-                print(f"[Load-Fehler] Datei beschädigt, starte bei Level 1. Fehler: {e}")
-                self.unlocked_level = 1
-        else:
-            print("[Load] Kein Spielstand gefunden. Starte neues Spiel.")
-            self.unlocked_level = 1
+                print(f"[Load] Fehler in save_progress.json: {e}")
+
+        if os.path.exists("highscores.json"):
+            try:
+                with open("highscores.json", "r") as file:
+                    self.highscores = json.load(file)
+            except Exception as e:
+                print(f"[Load] Fehler in highscores.json: {e}")
+
+        self.save_game_data()
+
+    def save_game_data(self):
+        """Speichert Fortschritt, Highscores und Einstellungen in game_data.json."""
+        data = {
+            "unlocked_level": self.unlocked_level,
+            "difficulty": self.difficulty,
+            "highscores": self.highscores
+        }
+        try:
+            with open("game_data.json", "w") as file:
+                json.dump(data, file, indent=4)
+            print(f"[Save] game_data.json erfolgreich gespeichert.")
+        except Exception as e:
+            print(f"[Save-Fehler] Konnte game_data.json nicht schreiben: {e}")
+
+    def spawn_particles(self, x, y, color, count=12):
+        for _ in range(count):
+            p = Particle(x, y, color)
+            self.particles.add(p)
+            self.all_sprites.add(p)
 
     def start_game(self):
         self.all_sprites.empty()
         self.blocks.empty()
         self.powerups.empty()
         self.balls.empty()
+        self.particles.empty()
+        self.secure_borders.empty()
         self.active_effects.clear()
-        self.time_factor = 1.0
         
-        # Scoring-Werte für dieses Level zurücksetzen
+        self.time_factor = 1.0
+        self.score_multiplier = 1.0
+        
         self.level_start_ticks = pygame.time.get_ticks()
         self.elapsed_seconds_at_win = 0.0
         self.paddle_hits_count = 0
@@ -138,8 +149,7 @@ class Game:
         self.is_score_saved = False
         self.player_name = ""
         
-        # Fenstertitel mit der aktuellen Levelnummer aktualisieren
-        pygame.display.set_caption(f"{TITLE} - Level {self.current_level_num}")
+        pygame.display.set_caption(f"{TITLE} - Level {self.current_level_num} ({DIFFICULTY_SETTINGS[self.difficulty]['label']})")
         
         level_file = get_level_name(self.current_level_num)
         self.blocks = self.level_manager.load_level(level_file)
@@ -149,12 +159,13 @@ class Game:
             return
 
         self.reset_paddle()
+        self.paddle_sticky = False
         
-        self.paddle_sticky = False # Klebe-Effekt zu Beginn ausschalten
+        diff_settings = DIFFICULTY_SETTINGS[self.difficulty]
+        base_ball_speed = BALL_SPEED * diff_settings["ball_speed_mult"]
         
-        # Ball startet direkt auf der Position des Paddles
-        start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8)
-        start_ball.attached = True # Ball anheften
+        start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8, speed_x=0, speed_y=-base_ball_speed)
+        start_ball.attached = True
         self.balls.add(start_ball)
         
         self.all_sprites.add(self.paddle, self.balls, self.blocks)
@@ -165,18 +176,30 @@ class Game:
         self.paddle.image = pygame.Surface((100, 15))
         self.paddle.image.fill(WHITE)
         self.paddle.rect = self.paddle.image.get_rect(centerx=pos[0], bottom=SCREEN_HEIGHT-30)
+        self.paddle.inverted_controls = False
 
-    # Positive Effekte (echte "Power-Ups") vs. negative Effekte ("Power-Downs").
     POSITIVE_EFFECTS = ["sticky_paddle", "expand_paddle", "slow_time",
-                        "bigger_ball", "multiball", "piercing_shot"]
-    NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball"]
+                        "bigger_ball", "multiball", "piercing_shot",
+                        "secure_border", "magnet", "score_boost"]
+    NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball",
+                        "score_drain", "inverted_controls"]
 
-    def spawn_powerup(self, x, y, guaranteed=False):
-        spawn_chance = 1.0 if guaranteed else 0.15
-        if random.random() < spawn_chance:
-            # Garantierte Drops (grüne PowerUp-Blöcke) dürfen NUR positive Effekte auswerfen.
-            # Normale Blöcke droppen weiterhin zufällig aus positiven und negativen Effekten.
-            effects = self.POSITIVE_EFFECTS if guaranteed else (self.POSITIVE_EFFECTS + self.NEGATIVE_EFFECTS)
+    def spawn_powerup(self, x, y, guaranteed_type=None):
+        diff_cfg = DIFFICULTY_SETTINGS[self.difficulty]
+        spawn_chance = diff_cfg["powerup_chance"]
+        
+        if guaranteed_type == 'P':
+            chosen_effect = random.choice(self.POSITIVE_EFFECTS)
+            p_up = PowerUp(x, y, chosen_effect)
+            self.powerups.add(p_up)
+            self.all_sprites.add(p_up)
+        elif guaranteed_type == 'D':
+            chosen_effect = random.choice(self.NEGATIVE_EFFECTS)
+            p_up = PowerUp(x, y, chosen_effect)
+            self.powerups.add(p_up)
+            self.all_sprites.add(p_up)
+        elif random.random() < spawn_chance:
+            effects = self.POSITIVE_EFFECTS + self.NEGATIVE_EFFECTS
             chosen_effect = random.choice(effects)
             p_up = PowerUp(x, y, chosen_effect)
             self.powerups.add(p_up)
@@ -185,43 +208,55 @@ class Game:
     def apply_powerup(self, powerup):
         self.powerups_collected_count += 1
         now = pygame.time.get_ticks()
-        duration = 8000
+        diff_timer_mult = DIFFICULTY_SETTINGS[self.difficulty]["timer_mult"]
+        duration = int(8000 * diff_timer_mult)
         
-        if powerup.effect_type == "sticky_paddle":
+        etype = powerup.effect_type
+        
+        if etype == "sticky_paddle":
             self.paddle_sticky = True
             current_width = self.paddle.rect.width
             self.paddle.image = pygame.Surface((current_width, 15))
             self.paddle.image.fill(YELLOW)
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
             self.active_effects["sticky_paddle"] = now + duration
-        elif powerup.effect_type == "expand_paddle":
+            
+        elif etype == "expand_paddle":
+            # Revert shrink if active
             self.paddle.image = pygame.Surface((160, 15))
             color = YELLOW if self.paddle_sticky else GREEN
             self.paddle.image.fill(color)
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
             self.active_effects["paddle_size"] = now + duration
-        elif powerup.effect_type == "shrink_paddle":
+            
+        elif etype == "shrink_paddle":
             self.paddle.image = pygame.Surface((50, 15))
             color = YELLOW if self.paddle_sticky else RED
             self.paddle.image.fill(color)
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
             self.active_effects["paddle_size"] = now + duration
-        elif powerup.effect_type == "slow_time":
+            
+        elif etype == "slow_time":
             self.time_factor = 0.5
             self.active_effects["time_distortion"] = now + duration
-        elif powerup.effect_type == "speed_time":
+            
+        elif etype == "speed_time":
             self.time_factor = 1.5
             self.active_effects["time_distortion"] = now + duration
-        elif powerup.effect_type == "bigger_ball":
+            
+        elif etype == "bigger_ball":
             for ball in self.balls: ball.set_size(15)
             self.active_effects["ball_size"] = now + duration
-        elif powerup.effect_type == "smaller_ball":
+            
+        elif etype == "smaller_ball":
             for ball in self.balls: ball.set_size(4)
             self.active_effects["ball_size"] = now + duration
-        elif powerup.effect_type == "piercing_shot":
+            
+        elif etype == "piercing_shot":
             for ball in self.balls: ball.set_piercing(True)
             self.active_effects["piercing"] = now + duration
-        elif powerup.effect_type == "multiball":
+            
+        elif etype == "multiball":
             current_balls = list(self.balls)
             for b in current_balls:
                 new_ball = Ball(b.rect.centerx, b.rect.centery, b.speed_x * -1, b.speed_y)
@@ -229,6 +264,28 @@ class Game:
                 if "piercing" in self.active_effects: new_ball.set_piercing(True)
                 self.balls.add(new_ball)
                 self.all_sprites.add(new_ball)
+                
+        elif etype == "secure_border":
+            if len(self.secure_borders) == 0:
+                sb = SecureBorder()
+                self.secure_borders.add(sb)
+                self.all_sprites.add(sb)
+            self.active_effects["secure_border"] = now + duration + 4000
+            
+        elif etype == "magnet":
+            self.active_effects["magnet"] = now + duration
+            
+        elif etype == "score_boost":
+            self.score_multiplier = 1.5
+            self.active_effects["score_modifier"] = now + duration
+            
+        elif etype == "score_drain":
+            self.score_multiplier = 0.7
+            self.active_effects["score_modifier"] = now + duration
+            
+        elif etype == "inverted_controls":
+            self.paddle.inverted_controls = True
+            self.active_effects["inverted_controls"] = now + duration
 
     def check_timers(self):
         now = pygame.time.get_ticks()
@@ -261,25 +318,56 @@ class Game:
         if "time_distortion" in self.active_effects and now > self.active_effects["time_distortion"]:
             self.time_factor = 1.0
             del self.active_effects["time_distortion"]
+            
         if "ball_size" in self.active_effects and now > self.active_effects["ball_size"]:
             for ball in self.balls: ball.set_size(8)
             del self.active_effects["ball_size"]
+            
         if "piercing" in self.active_effects and now > self.active_effects["piercing"]:
             for ball in self.balls: ball.set_piercing(False)
             del self.active_effects["piercing"]
+            
+        if "secure_border" in self.active_effects and now > self.active_effects["secure_border"]:
+            for sb in self.secure_borders: sb.kill()
+            del self.active_effects["secure_border"]
+            
+        if "magnet" in self.active_effects and now > self.active_effects["magnet"]:
+            del self.active_effects["magnet"]
+            
+        if "score_modifier" in self.active_effects and now > self.active_effects["score_modifier"]:
+            self.score_multiplier = 1.0
+            del self.active_effects["score_modifier"]
+            
+        if "inverted_controls" in self.active_effects and now > self.active_effects["inverted_controls"]:
+            self.paddle.inverted_controls = False
+            del self.active_effects["inverted_controls"]
+
+    def trigger_explosion(self, origin_x, origin_y, radius=75):
+        self.spawn_particles(origin_x, origin_y, ORANGE, count=25)
+        self.spawn_particles(origin_x, origin_y, RED, count=15)
+        
+        for block in list(self.blocks):
+            dist = math.hypot(block.rect.centerx - origin_x, block.rect.centery - origin_y)
+            if dist <= radius:
+                destroyed = block.hit(force_destroy=True)
+                if destroyed:
+                    self.spawn_particles(block.rect.centerx, block.rect.centery, YELLOW, count=10)
+                    if block.is_powerup:
+                        self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P')
+                    elif block.is_powerdown:
+                        self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='D')
+                    block.kill()
 
     def calculate_score(self, elapsed_seconds):
-        """Berechnet den Score anhand einer übergebenen Zeit."""
         base_score = 10000
-        time_penalty = int(elapsed_seconds * 12)
-        hit_penalty = self.paddle_hits_count * 25
-        powerup_penalty = self.powerups_collected_count * 150
+        time_penalty = int(elapsed_seconds * 10 * (1.0 / self.time_factor))
+        hit_penalty = self.paddle_hits_count * 20
+        powerup_penalty = self.powerups_collected_count * 100
         
-        score = base_score - time_penalty - hit_penalty - powerup_penalty
-        return max(0, score)
+        score = (base_score - time_penalty - hit_penalty - powerup_penalty) * self.score_multiplier
+        return max(0, int(score))
 
     def calculate_current_score(self):
-        """Berechnet den Live-Score während des Spielens."""
         elapsed_seconds = (pygame.time.get_ticks() - self.level_start_ticks) / 1000.0
         return self.calculate_score(elapsed_seconds)
 
@@ -293,21 +381,28 @@ class Game:
                 
                 if action == "PLAY":
                     self.current_level_num = self.unlocked_level
-                    self.state = STATE_PLAYING
                     self.start_game()
                     
                 elif action == "LEVEL_SELECT":
                     self.state = STATE_LEVEL_SELECT
                     
+                elif action == "DIFFICULTY":
+                    if self.difficulty == DIFFICULTY_EASY:
+                        self.difficulty = DIFFICULTY_NORMAL
+                    elif self.difficulty == DIFFICULTY_NORMAL:
+                        self.difficulty = DIFFICULTY_HARD
+                    else:
+                        self.difficulty = DIFFICULTY_EASY
+                    self.menu.set_difficulty_label(self.difficulty)
+                    self.save_game_data()
+                    
                 elif action == "EDITOR":
                     self.state = STATE_EDITOR
-                    print("[System] Editor wird geöffnet...")
                     
                 elif action == "RESET":
                     self.unlocked_level = 1
                     self.current_level_num = 1
-                    self.save_game()
-                    print("[Spielstand] Fortschritt zurückgesetzt!")
+                    self.save_game_data()
                     
                 elif action == "QUIT":
                     self.running = False
@@ -315,9 +410,6 @@ class Game:
                 elif action == "HIGHSCORE":
                     self.state = STATE_HIGHSCORE
 
-            # ==========================================
-            # ZUSTAND: LEVELAUSWAHL (STATE_LEVEL_SELECT)
-            # ==========================================
             elif self.state == STATE_LEVEL_SELECT:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     chosen_level = self.level_selection_menu.handle_click(pygame.mouse.get_pos())
@@ -327,7 +419,6 @@ class Game:
                         
                     elif chosen_level is not None:
                         self.current_level_num = chosen_level
-                        self.state = STATE_PLAYING
                         self.start_game()
                 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -343,8 +434,7 @@ class Game:
                         level_key = get_level_name(self.highscore_view_level)
                         if level_key in self.highscores:
                             del self.highscores[level_key]
-                            self.save_highscores()
-                            print(f"[Highscore] Einträge für Level {self.highscore_view_level} gelöscht.")
+                            self.save_game_data()
                     elif self.hs_prev_rect.collidepoint(mouse_pos):
                         if self.highscore_view_level > 1:
                             self.highscore_view_level -= 1
@@ -364,21 +454,22 @@ class Game:
                                 hit_pos = getattr(ball, "sticky_offset_x", 0)
                                 relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
                                 
-                                BALL_TEMPO = 5.5
+                                speed_mult = DIFFICULTY_SETTINGS[self.difficulty]["ball_speed_mult"]
+                                BALL_TEMPO = BALL_SPEED * speed_mult
                                 if abs(relative_hit) < 0.1:
                                     relative_hit = random.choice([-0.15, 0.15])
                                 
                                 ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
-                                ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
+                                ball.speed_y = -math.sqrt(max(1.0, BALL_TEMPO**2 - ball.speed_x**2))
                     
                     elif event.key == pygame.K_p:
                         self.state = STATE_PAUSED
 
             elif self.state == STATE_PAUSED:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_p, pygame.K_ESCAPE):
                     self.state = STATE_PLAYING
 
-            elif self.state == STATE_LEVEL_CLEARED:
+            elif self.state == STATE_LEVEL_CLEARED or self.state == STATE_ALL_CLEARED:
                 if self.qualifies_for_highscores and not self.is_score_saved:
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_RETURN:
@@ -392,7 +483,7 @@ class Game:
                                 })
                                 self.highscores[level_key].sort(key=lambda x: x["score"], reverse=True)
                                 self.highscores[level_key] = self.highscores[level_key][:5]
-                                self.save_highscores()
+                                self.save_game_data()
                                 self.is_score_saved = True
                         elif event.key == pygame.K_BACKSPACE:
                             self.player_name = self.player_name[:-1]
@@ -411,8 +502,7 @@ class Game:
                             self.current_level_num = next_level
                             self.start_game()
                         else:
-                            self.state = STATE_MENU
-                            pygame.display.set_caption(TITLE)
+                            self.state = STATE_ALL_CLEARED
                     
             elif self.state == STATE_EDITOR:
                 self.editor.handle_event(event) 
@@ -424,6 +514,21 @@ class Game:
     def update(self):
         if self.state == STATE_PLAYING:
             self.check_timers()
+            self.particles.update()
+            
+            # Magnet effect
+            if "magnet" in self.active_effects:
+                for ball in self.balls:
+                    if not ball.attached:
+                        if ball.rect.centerx < self.paddle.rect.centerx:
+                            ball.speed_x += 0.1
+                        elif ball.rect.centerx > self.paddle.rect.centerx:
+                            ball.speed_x -= 0.1
+                for p_up in self.powerups:
+                    if p_up.rect.centerx < self.paddle.rect.centerx:
+                        p_up.rect.x += 1
+                    elif p_up.rect.centerx > self.paddle.rect.centerx:
+                        p_up.rect.x -= 1
             
             for ball in self.balls:
                 if ball.attached:
@@ -455,8 +560,15 @@ class Game:
                         if abs(relative_hit) < 0.1:
                             relative_hit = random.choice([-0.15, 0.15])
                         
-                        ball.speed_x = relative_hit * (BALL_SPEED * 0.8)
-                        ball.speed_y = -math.sqrt(BALL_SPEED**2 - ball.speed_x**2)
+                        speed_mult = DIFFICULTY_SETTINGS[self.difficulty]["ball_speed_mult"]
+                        BALL_TEMPO = BALL_SPEED * speed_mult
+                        ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
+                        ball.speed_y = -math.sqrt(max(1.0, BALL_TEMPO**2 - ball.speed_x**2))
+
+                # --- SECURE BORDER KOLLISION ---
+                if pygame.sprite.spritecollide(ball, self.secure_borders, False) and ball.speed_y > 0:
+                    ball.speed_y *= -1
+                    self.spawn_particles(ball.rect.centerx, ball.rect.bottom, CYAN, count=8)
 
                 # --- BLOCK-KOLLISION ---
                 hit_blocks = pygame.sprite.spritecollide(ball, self.blocks, False)
@@ -465,11 +577,21 @@ class Game:
                         ball.speed_y *= -1
                         
                     for block in hit_blocks:
-                        destroyed = block.hit()
+                        self.spawn_particles(block.rect.centerx, block.rect.centery, YELLOW if block.health==1 else ORANGE, count=8)
                         
-                        if destroyed:
-                            self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
+                        if block.is_explosive:
                             block.kill()
+                            self.trigger_explosion(block.rect.centerx, block.rect.centery)
+                        else:
+                            destroyed = block.hit(force_destroy=ball.is_piercing)
+                            if destroyed:
+                                if block.is_powerup:
+                                    self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P')
+                                elif block.is_powerdown:
+                                    self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='D')
+                                else:
+                                    self.spawn_powerup(block.rect.x, block.rect.y)
+                                block.kill()
 
                 # --- AUS-DEM-SPIEL-PRÜFUNG ---
                 if ball.rect.top > SCREEN_HEIGHT:
@@ -483,8 +605,9 @@ class Game:
                 self.state = STATE_MENU
                 pygame.display.set_caption(TITLE)
 
-            # --- LEVEL GESCHAFFT ---
-            if len(self.blocks) == 0:
+            # --- WIN CONDITION: Mandatory Bricks Cleared ---
+            mandatory_remaining = [b for b in self.blocks if not b.is_unbreakable and not b.is_powerdown]
+            if len(mandatory_remaining) == 0:
                 elapsed_ms = pygame.time.get_ticks() - self.level_start_ticks
                 self.elapsed_seconds_at_win = elapsed_ms / 1000.0
                 self.final_score = self.calculate_score(self.elapsed_seconds_at_win)
@@ -492,7 +615,7 @@ class Game:
                 next_level = self.current_level_num + 1
                 if next_level > self.unlocked_level:
                     self.unlocked_level = next_level
-                    self.save_game()
+                    self.save_game_data()
                 
                 level_key = get_level_name(self.current_level_num)
                 level_scores = self.highscores.get(level_key, [])
@@ -501,25 +624,64 @@ class Game:
                 else:
                     self.qualifies_for_highscores = False
                 
-                self.state = STATE_LEVEL_CLEARED
+                if os.path.exists(os.path.join("levels", get_level_name(next_level))):
+                    self.state = STATE_LEVEL_CLEARED
+                else:
+                    self.state = STATE_ALL_CLEARED
+                
+        elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
+            self.particles.update()
+            # Spawn fireworks
+            now = pygame.time.get_ticks()
+            if now - self.fireworks_timer > 300:
+                self.fireworks_timer = now
+                fx = random.randint(100, SCREEN_WIDTH - 100)
+                fy = random.randint(80, 300)
+                fcolor = random.choice([YELLOW, CYAN, RED, GREEN, MAGENTA])
+                self.spawn_particles(fx, fy, fcolor, count=30)
                 
         elif self.state == STATE_EDITOR:
             self.editor.update()
 
+    def draw_background(self):
+        self.screen.fill(BLACK)
+        # Starfield
+        for star in self.bg_stars:
+            star[1] += star[2]
+            if star[1] > SCREEN_HEIGHT:
+                star[1] = 0
+                star[0] = random.randint(0, SCREEN_WIDTH)
+            pygame.draw.circle(self.screen, (100, 120, 150), (int(star[0]), int(star[1])), max(1, int(star[2])))
+
     def draw(self):
-        self.screen.fill(BLACK) 
+        self.draw_background()
         
-        if self.state == STATE_PLAYING or self.state == STATE_PAUSED:
+        if self.state in (STATE_PLAYING, STATE_PAUSED):
             self.all_sprites.draw(self.screen)
             
             font_hud = pygame.font.SysFont(None, 24)
             live_score = self.calculate_current_score()
             score_txt = font_hud.render(f"Score: {live_score}", True, YELLOW)
-            self.screen.blit(score_txt, (SCREEN_WIDTH - 130, 15))
+            diff_txt = font_hud.render(f"Diff: {DIFFICULTY_SETTINGS[self.difficulty]['label']}", True, CYAN)
+            self.screen.blit(score_txt, (SCREEN_WIDTH - 140, 15))
+            self.screen.blit(diff_txt, (20, 15))
+            
+            # Active effects warning / timer bar
+            now = pygame.time.get_ticks()
+            active_labels = []
+            for etype, expire in list(self.active_effects.items()):
+                rem = expire - now
+                if rem <= 2000 and (now // 200) % 2 == 0:
+                    continue # Blink when <2s remaining
+                active_labels.append(etype.replace("_", " ").title())
+            
+            if active_labels:
+                eff_surf = font_hud.render(f"Effekte: {', '.join(active_labels)}", True, GREEN)
+                self.screen.blit(eff_surf, (20, SCREEN_HEIGHT - 25))
         
         if self.state == STATE_PAUSED:
             font = pygame.font.SysFont(None, 60, bold=True)
-            text_surf = font.render("SPIEL PAUSIERT", True, (255, 255, 255))
+            text_surf = font.render("SPIEL PAUSIERT", True, WHITE)
             text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
             
             sub_font = pygame.font.SysFont(None, 24)
@@ -529,9 +691,14 @@ class Game:
             self.screen.blit(text_surf, text_rect)
             self.screen.blit(sub_surf, sub_rect)
             
-        elif self.state == STATE_LEVEL_CLEARED:
-            title_font = pygame.font.SysFont(None, 50, bold=True)
-            title_surf = title_font.render(f"LEVEL {self.current_level_num} GESCHAFFT!", True, GREEN)
+        elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
+            self.particles.draw(self.screen)
+            
+            title_font = pygame.font.SysFont(None, 46, bold=True)
+            if self.state == STATE_ALL_CLEARED:
+                title_surf = title_font.render("GLÜCKWUNSCH! ALLE LEVEL MEISTERHAFT CLEARED!", True, YELLOW)
+            else:
+                title_surf = title_font.render(f"LEVEL {self.current_level_num} GESCHAFFT!", True, GREEN)
             self.screen.blit(title_surf, (SCREEN_WIDTH // 2 - title_surf.get_width() // 2, 40))
             
             stat_font = pygame.font.SysFont(None, 24)
@@ -559,7 +726,7 @@ class Game:
             row_font = pygame.font.SysFont(None, 22)
             if not level_scores:
                 no_hs = row_font.render("Noch keine Highscores vorhanden.", True, (180, 180, 180))
-                self.screen.blit(no_hs, (SCREEN_WIDTH // 2 - no_hs.get_width() // 2, 270))
+                self.screen.blit(no_hs, (SCREEN_WIDTH // 2 - no_hs.get_width() // 2, 265))
             else:
                 for idx, entry in enumerate(level_scores):
                     row_txt = row_font.render(f"{idx + 1}. {entry['name']} - {entry['score']} Punkte", True, WHITE)

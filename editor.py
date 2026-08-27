@@ -36,8 +36,12 @@ class LevelEditor:
             "3": {"color": ORANGE, "label": "Starker Block (3 Leben) (Taste 3)"},
             "4": {"color": REDDISH_ORANGE, "label": "Starker Block (4 Leben) (Taste 4)"},
             "5": {"color": RED, "label": "Starker Block (5 Leben) (Taste 5)"},
-            "P": {"color": GREEN, "label": "PowerUp-Block (Taste P)"}
+            "P": {"color": GREEN, "label": "PowerUp-Block (Taste P)"},
+            "D": {"color": DARK_PURPLE, "label": "PowerDown-Block (Taste D)"},
+            "E": {"color": RED, "label": "Explosiver Block (Taste E)"},
+            "U": {"color": STEEL_GREY, "label": "Unzerstoerbar (Taste U)"}
         }
+
         
         self.font = pygame.font.SysFont(None, 22)
         self.running = True
@@ -66,6 +70,9 @@ class LevelEditor:
             if event.key == pygame.K_4: self.current_type = "4"
             if event.key == pygame.K_5: self.current_type = "5"
             if event.key == pygame.K_p: self.current_type = "P"
+            if event.key == pygame.K_d: self.current_type = "D"
+            if event.key == pygame.K_e: self.current_type = "E"
+            if event.key == pygame.K_u: self.current_type = "U"
             if event.key == pygame.K_0: self.current_type = "0"
             
             # Speichern auslösen
@@ -124,28 +131,29 @@ class LevelEditor:
                                    self.block_width - 2, self.block_height - 2)
                 pygame.draw.rect(self.screen, color, rect)
                 
-                if block_type == "P":
-                    p_txt = self.font.render("P", True, (0, 0, 0))
-                    self.screen.blit(p_txt, (rect.x + rect.width//2 - p_txt.get_width()//2, 
-                                             rect.y + rect.height//2 - p_txt.get_height()//2))
+                if block_type in ("P", "D", "E", "U"):
+                    lbl_txt = self.font.render(block_type, True, WHITE if block_type != "E" else YELLOW)
+                    self.screen.blit(lbl_txt, (rect.x + rect.width//2 - lbl_txt.get_width()//2, 
+                                             rect.y + rect.height//2 - lbl_txt.get_height()//2))
 
         pygame.draw.line(self.screen, WHITE, (0, self.rows * self.block_height), 
                          (SCREEN_WIDTH, self.rows * self.block_height), 2)
         
         # 2. UI-Steuerung & Informationen unterhalb des Grids
-        ui_y = self.rows * self.block_height + 20
+        ui_y = self.rows * self.block_height + 15
         active_label = self.types[self.current_type]['label']
         sel_text = self.font.render(f"Ausgewaehltes Werkzeug: {active_label}", True, YELLOW)
         self.screen.blit(sel_text, (20, ui_y))
         
         instructions = [
             "BEDIENUNG:",
-            "- Tasten [1], [2], [3], [4], [5], [P] oder [0] druecken, um Blocktyp zu wechseln",
+            "- Tasten [1]-[5], [P] (PowerUp), [D] (PowerDown), [E] (Explosiv), [U] (Unzerstörbar), [0] (Erased)",
             "- Linke Maustaste gedrueckt halten: Blöcke zeichnen",
             "- Rechte Maustaste gedrueckt halten: Blöcke radieren",
             "- Taste [S] druecken: Als nächstes freies Level in /levels/ speichern",
             "- Taste [ESC] druecken: Editor schliessen"
         ]
+
         
         for idx, text in enumerate(instructions):
             color = (50, 150, 255) if idx == 0 else WHITE
