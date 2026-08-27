@@ -6,7 +6,7 @@ import random
 from typing import Any, cast
 from settings import *
 from level_manager import LevelManager
-from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, Boss, BossProjectile, FloatingText
+from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, HomingMissile, ShieldOrb, Boss, BossProjectile, FloatingText
 from menu import LevelSelectionMenu, MainMenu, SettingsMenu
 from editor import LevelEditor
 from sound_manager import SoundManager
@@ -29,7 +29,13 @@ class Game:
         self.state = STATE_MENU
         self.previous_state = STATE_MENU
         
-        # Controller / Gamepad Unterstüzung
+        # UI Auswahl-Indizes für Controller
+        self.pause_selected_idx = 0
+        self.win_selected_idx = 0
+        self.hs_selected_idx = 0
+        self.last_ctrl_move_ticks = 0
+
+        # Controller / Gamepad Unterstützung
         if not pygame.joystick.get_init():
             pygame.joystick.init()
         self.joysticks: list[Any] = []
@@ -52,7 +58,7 @@ class Game:
         # Highscore-Rechtecke & Pause-Buttons für Klicks definieren
         self.update_highscore_rects()
         
-        # Scoring-Metriken & Zeitmessung
+        # Scoring-Metriken & Zeitmessung & Combo-System
         self.level_start_ticks = 0
         self.effective_elapsed_seconds = 0.0
         self.last_frame_ticks = 0
@@ -64,6 +70,9 @@ class Game:
         self.qualifies_for_highscores = False
         self.is_score_saved = False
         self.player_name = ""
+        
+        self.combo_counter = 0
+        self.last_hit_ticks = 0
         
         # Screen-Shake State
         self.shake_amount: float = 0.0
@@ -82,6 +91,8 @@ class Game:
         self.powerups: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.balls: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.lasers: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.missiles: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.shield_orbs: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.particles: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.secure_borders: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.bosses: pygame.sprite.Group[Any] = pygame.sprite.Group()
@@ -121,6 +132,22 @@ class Game:
     def spawn_floating_text(self, x: float, y: float, text: str, color: tuple[int, int, int] = WHITE, font_size: int = 22):
         ft = FloatingText(x, y, text, color=color, font_size=font_size)
         self.floating_texts.add(ft)
+
+    def register_hit_combo(self, x: float, y: float, base_pts: int = 100) -> int:
+        now = pygame.time.get_ticks()
+        if now - self.last_hit_ticks <= 1250:
+            self.combo_counter += 1
+        else:
+            self.combo_counter = 1
+        self.last_hit_ticks = now
+
+        multiplier = min(5, self.combo_counter)
+        if self.combo_counter >= 2:
+            color = GREEN if multiplier == 2 else (CYAN if multiplier == 3 else (ORANGE if multiplier == 4 else MAGENTA))
+            self.spawn_floating_text(x, y - 15, f"{multiplier}x COMBO!", color, font_size=24)
+            if self.combo_counter >= 3:
+                self.sound_manager.play_sound("combo_up")
+        return base_pts * multiplier
 
     def load_game_data(self):
         """Lädt Spieldaten und Audio-Einstellungen aus game_data.json."""
@@ -173,6 +200,8 @@ class Game:
         self.powerups.empty()
         self.balls.empty()
         self.lasers.empty()
+        self.missiles.empty()
+        self.shield_orbs.empty()
         self.particles.empty()
         self.secure_borders.empty()
         self.bosses.empty()
@@ -186,6 +215,8 @@ class Game:
         self.time_factor = 1.0
         self.score_multiplier = 1.0
         self.shake_amount = 0.0
+        self.combo_counter = 0
+        self.last_hit_ticks = 0
         
         self.level_start_ticks = pygame.time.get_ticks()
         self.last_frame_ticks = pygame.time.get_ticks()
@@ -205,6 +236,12 @@ class Game:
         if boss:
             self.bosses.add(boss)
             self.all_sprites.add(boss)
+            # Shield Boss Orbs erzeugen bei Level 5 oder 15
+            if self.current_level_num in (5, 15):
+                orb1 = ShieldOrb(boss, 0.0)
+                orb2 = ShieldOrb(boss, math.pi)
+                self.shield_orbs.add(orb1, orb2)
+                self.all_sprites.add(orb1, orb2)
 
         if len(self.blocks) == 0 and not boss:
             self.state = STATE_MENU
@@ -233,10 +270,14 @@ class Game:
         self.paddle.image.fill(WHITE)
         self.paddle.rect = self.paddle.image.get_rect(centerx=pos[0], bottom=sh - 30)
         self.paddle.inverted_controls = False
+        self.paddle.laser_ammo = 0
+        self.paddle.missile_ammo = 0
+        self.paddle.shield_active = False
 
     POSITIVE_EFFECTS = ["sticky_paddle", "expand_paddle", "slow_time",
                         "bigger_ball", "multiball", "piercing_shot",
-                        "laser_paddle", "safety_net", "secure_border",
+                        "laser_paddle", "missile_paddle", "shield_aura",
+                        "safety_net", "secure_border",
                         "magnet", "score_boost", "fireball"]
     NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball",
                         "score_drain", "inverted_controls"]
@@ -324,7 +365,16 @@ class Game:
                 self.all_sprites.add(new_ball)
                 
         elif etype == "laser_paddle":
+            self.paddle.laser_ammo = 12  # Nerf: 12 Schuss
             self.active_effects["laser_paddle"] = now + duration
+            
+        elif etype == "missile_paddle":
+            self.paddle.missile_ammo = 6  # 6 Zielsuchraketen
+            self.active_effects["missile_paddle"] = now + duration
+
+        elif etype == "shield_aura":
+            self.paddle.shield_active = True
+            self.active_effects["shield_aura"] = now + duration
             
         elif etype == "safety_net":
             if self.safety_net:
@@ -421,6 +471,10 @@ class Game:
             self.paddle.inverted_controls = False
             del self.active_effects["inverted_controls"]
 
+        if "shield_aura" in self.active_effects and now > self.active_effects["shield_aura"]:
+            self.paddle.shield_active = False
+            del self.active_effects["shield_aura"]
+
     def trigger_explosion(self, origin_block: Block):
         origin_block.kill()
         center_x = origin_block.rect.centerx
@@ -469,7 +523,8 @@ class Game:
             self.sound_manager.play_sound("laser")
 
     def launch_ball_or_laser(self):
-        """Startet klebende Bälle oder feuert Laser-Kanonen."""
+        """Startet klebende Bälle, feuert Laser-Kanonen (mit Nerf/Ammo) oder Homing Missiles."""
+        now = pygame.time.get_ticks()
         for ball in self.balls:
             if ball.attached:
                 ball.attached = False
@@ -485,12 +540,30 @@ class Game:
                 ball.speed_y = -math.sqrt(max(1.0, BALL_TEMPO**2 - ball.speed_x**2))
                 self.sound_manager.play_sound("paddle_hit")
 
-        if "laser_paddle" in self.active_effects:
-            l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
-            l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
-            self.lasers.add(l1, l2)
-            self.all_sprites.add(l1, l2)
-            self.sound_manager.play_sound("laser")
+        # --- LASER NERF: 300ms Cooldown & Munitionsabzug ---
+        if "laser_paddle" in self.active_effects and self.paddle.laser_ammo > 0:
+            if now - self.paddle.last_shot_ticks >= 300:
+                self.paddle.last_shot_ticks = now
+                self.paddle.laser_ammo -= 1
+                l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
+                l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
+                self.lasers.add(l1, l2)
+                self.all_sprites.add(l1, l2)
+                self.sound_manager.play_sound("laser")
+                if self.paddle.laser_ammo <= 0:
+                    del self.active_effects["laser_paddle"]
+
+        # --- HOMING MISSILE LAUNCHER ---
+        if "missile_paddle" in self.active_effects and self.paddle.missile_ammo > 0:
+            if now - self.paddle.last_shot_ticks >= 300:
+                self.paddle.last_shot_ticks = now
+                self.paddle.missile_ammo -= 1
+                m = HomingMissile(self.paddle.rect.centerx, self.paddle.rect.top - 6)
+                self.missiles.add(m)
+                self.all_sprites.add(m)
+                self.sound_manager.play_sound("missile_launch")
+                if self.paddle.missile_ammo <= 0:
+                    del self.active_effects["missile_paddle"]
 
     def calculate_score(self, elapsed_seconds: float | None = None) -> int:
         base_score = 10000
@@ -560,6 +633,53 @@ class Game:
         self.pause_opts_rect = pygame.Rect(sw // 2 - 55, sh // 2 + 15, 110, 40)
         self.pause_menu_rect = pygame.Rect(sw // 2 + 70, sh // 2 + 15, 110, 40)
 
+    def trigger_menu_action(self, action: str | int | None):
+        if not action:
+            return
+            
+        if action == "PLAY":
+            self.current_level_num = self.unlocked_level
+            self.start_game()
+            
+        elif action == "LEVEL_SELECT":
+            self.state = STATE_LEVEL_SELECT
+            
+        elif action == "SETTINGS":
+            self.previous_state = STATE_MENU
+            self.state = STATE_SETTINGS
+            
+        elif action == "DIFFICULTY":
+            if self.difficulty == DIFFICULTY_EASY:
+                self.difficulty = DIFFICULTY_NORMAL
+            elif self.difficulty == DIFFICULTY_NORMAL:
+                self.difficulty = DIFFICULTY_HARD
+            else:
+                self.difficulty = DIFFICULTY_EASY
+            self.menu.set_difficulty_label(self.difficulty)
+            self.save_game_data()
+            
+        elif action == "EDITOR":
+            self.state = STATE_EDITOR
+            
+        elif action == "FULLSCREEN":
+            self.toggle_fullscreen()
+
+        elif action == "RESET":
+            self.unlocked_level = 1
+            self.current_level_num = 1
+            self.save_game_data()
+            print("[Spielstand] Fortschritt zurückgesetzt!")
+            
+        elif action == "QUIT":
+            self.running = False
+        
+        elif action == "HIGHSCORE":
+            self.state = STATE_HIGHSCORE
+            
+        elif isinstance(action, int):
+            self.current_level_num = action
+            self.start_game()
+
     def events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -573,32 +693,104 @@ class Game:
                     self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
                 self.on_resize()
 
+            # --- CONTROLLER STEUERKREUZ (D-PAD) NATIVE EVENTS ---
+            if event.type == pygame.JOYHATMOTION:
+                hx, hy = event.value
+                if hx != 0 or hy != 0:
+                    self.handle_controller_nav(d_x=hx, d_y=-hy)
+
             # --- CONTROLLER BUTTON EVENTS ---
             if event.type == pygame.JOYBUTTONDOWN:
-                if event.button == 0:  # Button A / Cross: Ball starten / Laser / Bestätigen
-                    if self.state == STATE_PLAYING:
-                        self.launch_ball_or_laser()
+                if event.button == 0:  # Button A / Cross: Bestätigen / Starten
+                    if self.state == STATE_MENU:
+                        self.trigger_menu_action(self.menu.get_selected_action())
+
+                    elif self.state == STATE_LEVEL_SELECT:
+                        act = self.level_selection_menu.get_selected_action(self.unlocked_level)
+                        if act == "BACK":
+                            self.state = STATE_MENU
+                        elif isinstance(act, int):
+                            self.trigger_menu_action(act)
+
+                    elif self.state == STATE_SETTINGS:
+                        act = self.settings_menu.trigger_selected_action(self.sound_manager)
+                        if act == "BACK":
+                            self.save_game_data()
+                            self.state = self.previous_state
+                        elif act == "TOGGLE_FULLSCREEN":
+                            self.toggle_fullscreen()
+                            self.save_game_data()
+
                     elif self.state == STATE_PAUSED:
-                        self.state = STATE_PLAYING
-                        self.sound_manager.play_bgm()
-                elif event.button in (6, 7):  # Button Start / Options: Pause
+                        if self.pause_selected_idx == 0:
+                            self.state = STATE_PLAYING
+                            self.sound_manager.play_bgm()
+                        elif self.pause_selected_idx == 1:
+                            self.previous_state = STATE_PAUSED
+                            self.state = STATE_SETTINGS
+                        elif self.pause_selected_idx == 2:
+                            self.state = STATE_MENU
+
+                    elif self.state == STATE_PLAYING:
+                        self.launch_ball_or_laser()
+
+                    elif self.state == STATE_HIGHSCORE:
+                        if self.hs_selected_idx == 0 and self.highscore_view_level > 1:
+                            self.highscore_view_level -= 1
+                        elif self.hs_selected_idx == 1 and self.highscore_view_level < 50:
+                            self.highscore_view_level += 1
+                        elif self.hs_selected_idx == 2:
+                            level_key = get_level_name(self.highscore_view_level)
+                            if level_key in self.highscores:
+                                del self.highscores[level_key]
+                                self.save_game_data()
+                        elif self.hs_selected_idx == 3:
+                            self.state = STATE_MENU
+
+                    elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
+                        if self.win_selected_idx == 0:
+                            self.state = STATE_MENU
+                            pygame.display.set_caption(TITLE)
+                        elif self.win_selected_idx == 1:
+                            next_level = self.current_level_num + 1
+                            if os.path.exists(os.path.join("levels", get_level_name(next_level))):
+                                self.current_level_num = next_level
+                                self.start_game()
+
+                    elif self.state == STATE_EDITOR:
+                        self.editor.place_at_cursor()
+
+                elif event.button == 1:  # Button B / Circle: Zurück
+                    if self.state in (STATE_LEVEL_SELECT, STATE_SETTINGS, STATE_HIGHSCORE, STATE_EDITOR):
+                        if self.state == STATE_SETTINGS:
+                            self.save_game_data()
+                            self.state = self.previous_state
+                        else:
+                            self.state = STATE_MENU
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_MENU
+
+                elif event.button == 2:  # Button X: Löschen im Editor / Mute im Spiel
+                    if self.state == STATE_EDITOR:
+                        self.editor.erase_at_cursor()
+                    else:
+                        muted = self.sound_manager.toggle_mute()
+                        status_text = "MUTED" if muted else "AUDIO ON"
+                        self.spawn_floating_text(self.screen.get_width() // 2, 50, f"AUDIO: {status_text}", YELLOW, font_size=26)
+                        self.save_game_data()
+
+                elif event.button in (3, 4, 5):  # Button Y, LB, RB: Werkzeug wechseln
+                    if self.state == STATE_EDITOR:
+                        dir_val = -1 if event.button == 4 else 1
+                        self.editor.cycle_type(dir_val)
+
+                elif event.button in (6, 7):  # Button Start / Select: Pause
                     if self.state == STATE_PLAYING:
                         self.state = STATE_PAUSED
                         self.sound_manager.stop_bgm()
                     elif self.state == STATE_PAUSED:
                         self.state = STATE_PLAYING
                         self.sound_manager.play_bgm()
-                elif event.button in (2, 4, 5):  # Button LB/RB/X: Mute
-                    muted = self.sound_manager.toggle_mute()
-                    status_text = "MUTED" if muted else "AUDIO ON"
-                    self.spawn_floating_text(self.screen.get_width() // 2, 50, f"AUDIO: {status_text}", YELLOW, font_size=26)
-                    self.save_game_data()
-                elif event.button == 1:  # Button B / Circle: Zurück
-                    if self.state == STATE_SETTINGS:
-                        self.save_game_data()
-                        self.state = self.previous_state
-                    elif self.state == STATE_PAUSED:
-                        self.state = STATE_MENU
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
@@ -613,45 +805,7 @@ class Game:
 
             if self.state == STATE_MENU:
                 action = self.menu.handle_event(event)
-                
-                if action == "PLAY":
-                    self.current_level_num = self.unlocked_level
-                    self.start_game()
-                    
-                elif action == "LEVEL_SELECT":
-                    self.state = STATE_LEVEL_SELECT
-                    
-                elif action == "SETTINGS":
-                    self.previous_state = STATE_MENU
-                    self.state = STATE_SETTINGS
-                    
-                elif action == "DIFFICULTY":
-                    if self.difficulty == DIFFICULTY_EASY:
-                        self.difficulty = DIFFICULTY_NORMAL
-                    elif self.difficulty == DIFFICULTY_NORMAL:
-                        self.difficulty = DIFFICULTY_HARD
-                    else:
-                        self.difficulty = DIFFICULTY_EASY
-                    self.menu.set_difficulty_label(self.difficulty)
-                    self.save_game_data()
-                    
-                elif action == "EDITOR":
-                    self.state = STATE_EDITOR
-                    
-                elif action == "FULLSCREEN":
-                    self.toggle_fullscreen()
-
-                elif action == "RESET":
-                    self.unlocked_level = 1
-                    self.current_level_num = 1
-                    self.save_game_data()
-                    print("[Spielstand] Fortschritt zurückgesetzt!")
-                    
-                elif action == "QUIT":
-                    self.running = False
-                
-                elif action == "HIGHSCORE":
-                    self.state = STATE_HIGHSCORE
+                self.trigger_menu_action(action)
 
             elif self.state == STATE_SETTINGS:
                 act = self.settings_menu.handle_event(event, self.sound_manager)
@@ -667,21 +821,33 @@ class Game:
             elif self.state == STATE_LEVEL_SELECT:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     chosen_level = self.level_selection_menu.handle_click(pygame.mouse.get_pos())
-                    
                     if chosen_level == "BACK":
                         self.state = STATE_MENU
-                        
                     elif chosen_level is not None:
                         self.current_level_num = chosen_level
                         self.start_game()
                 
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    self.state = STATE_MENU
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        self.level_selection_menu.navigate(0, -1, self.unlocked_level)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        self.level_selection_menu.navigate(0, 1, self.unlocked_level)
+                    elif event.key in (pygame.K_LEFT, pygame.K_a):
+                        self.level_selection_menu.navigate(-1, 0, self.unlocked_level)
+                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self.level_selection_menu.navigate(1, 0, self.unlocked_level)
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        act = self.level_selection_menu.get_selected_action(self.unlocked_level)
+                        if act == "BACK":
+                            self.state = STATE_MENU
+                        elif isinstance(act, int):
+                            self.trigger_menu_action(act)
+                    elif event.key == pygame.K_ESCAPE:
+                        self.state = STATE_MENU
 
             elif self.state == STATE_HIGHSCORE:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mouse_pos = pygame.mouse.get_pos()
-                    
                     if self.hs_back_rect.collidepoint(mouse_pos):
                         self.state = STATE_MENU
                     elif self.hs_delete_rect.collidepoint(mouse_pos):
@@ -696,8 +862,13 @@ class Game:
                         if self.highscore_view_level < 50:
                             self.highscore_view_level += 1
 
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    self.state = STATE_MENU
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self.hs_selected_idx = (self.hs_selected_idx - 1) % 4
+                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self.hs_selected_idx = (self.hs_selected_idx + 1) % 4
+                    elif event.key == pygame.K_ESCAPE:
+                        self.state = STATE_MENU
 
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
@@ -721,7 +892,20 @@ class Game:
                         self.state = STATE_MENU
 
                 if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_p, pygame.K_SPACE):
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self.pause_selected_idx = (self.pause_selected_idx - 1) % 3
+                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self.pause_selected_idx = (self.pause_selected_idx + 1) % 3
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        if self.pause_selected_idx == 0:
+                            self.state = STATE_PLAYING
+                            self.sound_manager.play_bgm()
+                        elif self.pause_selected_idx == 1:
+                            self.previous_state = STATE_PAUSED
+                            self.state = STATE_SETTINGS
+                        elif self.pause_selected_idx == 2:
+                            self.state = STATE_MENU
+                    elif event.key in (pygame.K_p, pygame.K_SPACE):
                         self.state = STATE_PLAYING
                         self.last_frame_ticks = pygame.time.get_ticks()
                         self.sound_manager.play_bgm()
@@ -765,7 +949,11 @@ class Game:
                             self.start_game()
                         else:
                             self.state = STATE_ALL_CLEARED
-                    
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
+                        self.win_selected_idx = 1 - self.win_selected_idx
+
             elif self.state == STATE_EDITOR:
                 self.editor.handle_event(event) 
                 
@@ -773,11 +961,38 @@ class Game:
                     self.state = STATE_MENU
                     pygame.display.set_caption(TITLE)
 
+    def handle_controller_nav(self, d_x: int, d_y: int):
+        now = pygame.time.get_ticks()
+        if now - self.last_ctrl_move_ticks < 150:
+            return
+        self.last_ctrl_move_ticks = now
+
+        if self.state == STATE_MENU:
+            if d_y != 0:
+                self.menu.navigate(d_y)
+        elif self.state == STATE_LEVEL_SELECT:
+            self.level_selection_menu.navigate(d_x, d_y, self.unlocked_level)
+        elif self.state == STATE_SETTINGS:
+            if d_y != 0:
+                self.settings_menu.navigate_row(d_y)
+            elif d_x != 0:
+                self.settings_menu.adjust_slider(0.05 * d_x, self.sound_manager)
+        elif self.state == STATE_PAUSED:
+            if d_x != 0 or d_y != 0:
+                self.pause_selected_idx = (self.pause_selected_idx + (d_x if d_x != 0 else d_y)) % 3
+        elif self.state == STATE_HIGHSCORE:
+            if d_x != 0 or d_y != 0:
+                self.hs_selected_idx = (self.hs_selected_idx + (d_x if d_x != 0 else d_y)) % 4
+        elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
+            if d_x != 0:
+                self.win_selected_idx = 1 - self.win_selected_idx
+        elif self.state == STATE_EDITOR:
+            self.editor.move_cursor(d_x, d_y)
+
     def update(self):
         if self.state == STATE_PLAYING:
             sw, sh = self.screen.get_width(), self.screen.get_height()
             
-            # --- ZEITMESSUNG MIT SLOW-MOTION SKALIERUNG ---
             now = pygame.time.get_ticks()
             dt = (now - self.last_frame_ticks) / 1000.0
             self.last_frame_ticks = now
@@ -786,7 +1001,48 @@ class Game:
             self.check_timers()
             self.particles.update()
             self.floating_texts.update()
+            self.shield_orbs.update()
             
+            # --- HOMING MISSILE UPDATE ---
+            target_obj = None
+            if len(self.bosses) > 0:
+                target_obj = list(self.bosses)[0]
+            elif len(self.blocks) > 0:
+                target_obj = list(self.blocks)[0]
+                
+            t_pos = (target_obj.rect.centerx, target_obj.rect.centery) if target_obj else None
+            for m in self.missiles:
+                m.update(target_pos=t_pos, screen_height=sh)
+
+            # --- MISSILE KOLLISIONEN ---
+            for m in list(self.missiles):
+                hit_b = pygame.sprite.spritecollide(m, self.blocks, False)
+                if hit_b:
+                    m.kill()
+                    for block in hit_b:
+                        pts = self.register_hit_combo(block.rect.centerx, block.rect.centery, 100)
+                        destroyed = block.hit(force_destroy=True)
+                        if destroyed:
+                            block.kill()
+                            self.spawn_particles(block.rect.centerx, block.rect.centery, ORANGE, count=12)
+                            self.sound_manager.play_sound("explosion")
+                            if getattr(block, 'is_explosive', False) or block.block_type == 'B':
+                                self.trigger_explosion(block)
+
+                hit_boss = pygame.sprite.spritecollide(m, self.bosses, False)
+                if hit_boss:
+                    m.kill()
+                    for boss in hit_boss:
+                        defeated = boss.hit(2)
+                        self.spawn_particles(boss.rect.centerx, boss.rect.centery, ORANGE, count=15)
+                        self.add_screen_shake(5.0, 200)
+                        self.sound_manager.play_sound("explosion")
+                        if defeated:
+                            boss.kill()
+                            self.add_screen_shake(12.0, 600)
+                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, (255, 215, 0), count=40)
+                            self.spawn_floating_text(boss.rect.centerx, boss.rect.centery, "BOSS DEFEATED!", (255, 215, 0), font_size=32)
+
             # --- BOSS UPDATE & GESCHOSSE ---
             for boss in list(self.bosses):
                 boss.update(sw)
@@ -820,7 +1076,6 @@ class Game:
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
-            # --- CONTROLLER ANALOG STICK & D-PAD PADDLE MOVEMENT ---
             ctrl_x = 0.0
             for js in self.joysticks:
                 try:
@@ -841,7 +1096,6 @@ class Game:
             self.blocks.update()
             self.lasers.update()
             
-            # Ball position check for wall bounce sounds
             for ball in self.balls:
                 if not ball.attached:
                     if ball.rect.left <= 0 or ball.rect.right >= sw or ball.rect.top <= 0:
@@ -849,15 +1103,20 @@ class Game:
 
             self.balls.update(self.time_factor, sw, sh)
 
-            # --- BOSS-GESCHOSS KOLLISIONEN MIT PADDLE & ABWEHR ---
+            # --- BOSS-GESCHOSS KOLLISIONEN MIT PADDLE (MIT SCHUTZSCHILD-AURA) ---
             hit_projectiles = pygame.sprite.spritecollide(cast(Any, self.paddle), self.boss_projectiles, True)
             for proj in hit_projectiles:
-                self.paddle.stun(1500)
-                self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
-                self.add_screen_shake(4.0, 200)
-                self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24)
-                self.sound_manager.play_sound("paddle_stun")
-                self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
+                if self.paddle.shield_active:
+                    self.paddle.shield_active = False
+                    self.sound_manager.play_sound("shield_hit")
+                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "SHIELD ABSORBED!", CYAN)
+                else:
+                    self.paddle.stun(1500)
+                    self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
+                    self.add_screen_shake(4.0, 200)
+                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24)
+                    self.sound_manager.play_sound("paddle_stun")
+                    self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
 
             pygame.sprite.groupcollide(self.boss_projectiles, self.secure_borders, True, False)
             if self.safety_net and self.safety_net.alive():
@@ -865,13 +1124,21 @@ class Game:
 
             # --- LASER-KOLLISIONEN ---
             for laser in list(self.lasers):
+                hit_orbs = pygame.sprite.spritecollide(laser, self.shield_orbs, False)
+                if hit_orbs:
+                    laser.kill()
+                    for orb in hit_orbs:
+                        orb.hit(1)
+                        self.sound_manager.play_sound("wall_hit")
+
                 hit_bosses = pygame.sprite.spritecollide(laser, self.bosses, False)
                 if hit_bosses:
                     laser.kill()
                     for boss in hit_bosses:
                         defeated = boss.hit(1)
+                        pts = self.register_hit_combo(laser.rect.centerx, laser.rect.top, 250)
                         self.spawn_particles(laser.rect.centerx, laser.rect.top, RED, count=8)
-                        self.spawn_floating_text(laser.rect.centerx, laser.rect.top - 5, "+250", ORANGE)
+                        self.spawn_floating_text(laser.rect.centerx, laser.rect.top - 5, f"+{pts}", ORANGE)
                         self.sound_manager.play_sound("boss_hit")
                         if defeated:
                             boss.kill()
@@ -888,7 +1155,8 @@ class Game:
                         destroyed = block.hit(force_destroy=True)
                         if destroyed:
                             block.kill()
-                            self.spawn_floating_text(block.rect.centerx, block.rect.centery, "+100", YELLOW)
+                            pts = self.register_hit_combo(block.rect.centerx, block.rect.centery, 100)
+                            self.spawn_floating_text(block.rect.centerx, block.rect.centery, f"+{pts}", YELLOW)
                             self.sound_manager.play_sound("block_hit")
                             if getattr(block, 'is_explosive', False) or block.block_type == 'B':
                                 self.trigger_explosion(block)
@@ -896,6 +1164,14 @@ class Game:
                                 self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P' if (block.is_powerup or block.block_type == 'P') else None)
             
             for ball in list(self.balls):
+                # --- BALL KOLLISION MIT SHIELD ORBS ---
+                hit_orbs = pygame.sprite.spritecollide(ball, self.shield_orbs, False)
+                if hit_orbs:
+                    for orb in hit_orbs:
+                        ball.speed_y *= -1
+                        orb.hit(1)
+                        self.sound_manager.play_sound("wall_hit")
+
                 # --- BALL KOLLISION MIT BOSS ---
                 hit_bosses = pygame.sprite.spritecollide(ball, self.bosses, False)
                 if hit_bosses:
@@ -903,7 +1179,8 @@ class Game:
                         ball.speed_y *= -1
                         self.spawn_particles(ball.rect.centerx, ball.rect.centery, ORANGE, count=10)
                         self.add_screen_shake(3.0, 150)
-                        self.spawn_floating_text(ball.rect.centerx, ball.rect.centery, "+250", ORANGE)
+                        pts = self.register_hit_combo(ball.rect.centerx, ball.rect.centery, 250)
+                        self.spawn_floating_text(ball.rect.centerx, ball.rect.centery, f"+{pts}", ORANGE)
                         self.sound_manager.play_sound("boss_hit")
                         defeated = boss.hit(1)
                         if defeated:
@@ -962,7 +1239,8 @@ class Game:
                             self.sound_manager.play_sound("block_hit")
                             if destroyed:
                                 block.kill()
-                                pts = 100 * block.health if hasattr(block, 'health') else 100
+                                base_pts = 100 * block.health if hasattr(block, 'health') else 100
+                                pts = self.register_hit_combo(block.rect.centerx, block.rect.centery, base_pts)
                                 self.spawn_floating_text(block.rect.centerx, block.rect.centery, f"+{pts}", YELLOW)
                                 if getattr(block, 'is_explosive', False) or block.block_type == 'B':
                                     self.trigger_explosion(block)
@@ -971,9 +1249,14 @@ class Game:
                                 else:
                                     self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P' if (block.is_powerup or block.block_type == 'P') else None)
 
-                # Aus-dem-Spiel- & Schutznetz-Prüfung
+                # Aus-dem-Spiel- & Schutznetz-Prüfung (Mit Schild-Aura Absicherung)
                 if ball.rect.bottom >= sh - 15:
-                    if self.safety_net and self.safety_net.alive():
+                    if self.paddle.shield_active:
+                        self.paddle.shield_active = False
+                        ball.speed_y = -abs(ball.speed_y)
+                        self.sound_manager.play_sound("shield_hit")
+                        self.spawn_floating_text(ball.rect.centerx, sh - 40, "SHIELD SAVED BALL!", CYAN)
+                    elif self.safety_net and self.safety_net.alive():
                         ball.rect.bottom = self.safety_net.rect.top
                         ball.y = float(ball.rect.y)
                         ball.speed_y = -abs(ball.speed_y)
@@ -1073,13 +1356,12 @@ class Game:
             else:
                 self.all_sprites.draw(self.screen)
 
-            # 3. Floating Text Popups rendern
+            # 3. Paddle Munitionsanzeige & Schutzschild rendern
+            self.paddle.draw_ammo_and_shield(self.screen)
+
+            # 4. Floating Text Popups rendern
             for ft in self.floating_texts:
                 self.screen.blit(ft.image, (ft.rect.x + offset_x, ft.rect.y + offset_y))
-            
-            if "laser_paddle" in self.active_effects:
-                pygame.draw.rect(self.screen, RED, (self.paddle.rect.left + 4 + offset_x, self.paddle.rect.top - 6 + offset_y, 6, 8))
-                pygame.draw.rect(self.screen, RED, (self.paddle.rect.right - 10 + offset_x, self.paddle.rect.top - 6 + offset_y, 6, 8))
             
             font_hud = pygame.font.SysFont(None, 24)
             live_score = self.calculate_current_score()
@@ -1088,7 +1370,7 @@ class Game:
             self.screen.blit(score_txt, (sw - 140, 15))
             self.screen.blit(diff_txt, (20, 15))
 
-            # Controller & Mute Indicator
+            # Combo & Controller & Mute Indicator
             ctrl_status = f"🎮 {len(self.joysticks)} Gamepad" if self.joysticks else "⌨️ Keyboard"
             audio_icon = "🔇 MUTED" if self.sound_manager.muted else "🔊 SFX"
             audio_txt = font_hud.render(f"{ctrl_status} | [M] {audio_icon}", True, (200, 200, 200))
@@ -1102,10 +1384,12 @@ class Game:
                     bar_x = sw // 2 - bar_w // 2
                     bar_y = 12
                     pct = max(0.0, boss.health / boss.max_health)
+                    bar_col = (255, 30, 30) if boss.in_rage_phase else (220, 40, 40)
                     pygame.draw.rect(self.screen, (40, 40, 40), (bar_x, bar_y, bar_w, bar_h), border_radius=4)
-                    pygame.draw.rect(self.screen, (220, 40, 40), (bar_x, bar_y, int(bar_w * pct), bar_h), border_radius=4)
+                    pygame.draw.rect(self.screen, bar_col, (bar_x, bar_y, int(bar_w * pct), bar_h), border_radius=4)
                     pygame.draw.rect(self.screen, (255, 215, 0), (bar_x, bar_y, bar_w, bar_h), width=2, border_radius=4)
-                    b_txt = font_hud.render(f"ENDGEGNER: {boss.health} / {boss.max_health} HP", True, WHITE)
+                    title_str = "BOSS PHASE 2 (WUT!)" if boss.in_rage_phase else "ENDGEGNER"
+                    b_txt = font_hud.render(f"{title_str}: {boss.health} / {boss.max_health} HP", True, WHITE)
                     self.screen.blit(b_txt, (sw // 2 - b_txt.get_width() // 2, bar_y - 2))
             
             active_labels = []
@@ -1130,7 +1414,7 @@ class Game:
             
             sub_font = pygame.font.SysFont(None, 22)
             
-            # Interactive Pause Buttons
+            # Interactive Pause Buttons mit Fokus-Rahmen
             mpos = pygame.mouse.get_pos()
             
             col_res = (50, 150, 50) if not self.pause_resume_rect.collidepoint(mpos) else (70, 190, 70)
@@ -1138,18 +1422,21 @@ class Game:
             col_men = (70, 70, 70) if not self.pause_menu_rect.collidepoint(mpos) else (100, 100, 100)
             
             pygame.draw.rect(self.screen, col_res, self.pause_resume_rect, border_radius=6)
-            pygame.draw.rect(self.screen, WHITE, self.pause_resume_rect, width=2, border_radius=6)
+            border_res = YELLOW if self.pause_selected_idx == 0 else WHITE
+            pygame.draw.rect(self.screen, border_res, self.pause_resume_rect, width=3 if self.pause_selected_idx == 0 else 2, border_radius=6)
             txt_res = sub_font.render("Weiter [P/A]", True, WHITE)
             self.screen.blit(txt_res, (self.pause_resume_rect.centerx - txt_res.get_width() // 2, self.pause_resume_rect.centery - txt_res.get_height() // 2))
 
             pygame.draw.rect(self.screen, col_opt, self.pause_opts_rect, border_radius=6)
-            pygame.draw.rect(self.screen, WHITE, self.pause_opts_rect, width=2, border_radius=6)
+            border_opt = YELLOW if self.pause_selected_idx == 1 else WHITE
+            pygame.draw.rect(self.screen, border_opt, self.pause_opts_rect, width=3 if self.pause_selected_idx == 1 else 2, border_radius=6)
             txt_opt = sub_font.render("Optionen [O]", True, WHITE)
             self.screen.blit(txt_opt, (self.pause_opts_rect.centerx - txt_opt.get_width() // 2, self.pause_opts_rect.centery - txt_opt.get_height() // 2))
 
             pygame.draw.rect(self.screen, col_men, self.pause_menu_rect, border_radius=6)
-            pygame.draw.rect(self.screen, WHITE, self.pause_menu_rect, width=2, border_radius=6)
-            txt_men = sub_font.render("Hauptmenü [ESC/B]", True, WHITE)
+            border_men = YELLOW if self.pause_selected_idx == 2 else WHITE
+            pygame.draw.rect(self.screen, border_men, self.pause_menu_rect, width=3 if self.pause_selected_idx == 2 else 2, border_radius=6)
+            txt_men = sub_font.render("Hauptmenü [ESC]", True, WHITE)
             self.screen.blit(txt_men, (self.pause_menu_rect.centerx - txt_men.get_width() // 2, self.pause_menu_rect.centery - txt_men.get_height() // 2))
 
         elif self.state == STATE_SETTINGS:
@@ -1217,7 +1504,8 @@ class Game:
 
             self.menu_btn_rect = pygame.Rect(sw // 2 - 210, sh - 70, 190, 45)
             pygame.draw.rect(self.screen, (70, 70, 70), self.menu_btn_rect, border_radius=8)
-            pygame.draw.rect(self.screen, WHITE, self.menu_btn_rect, width=2, border_radius=8)
+            border_m = YELLOW if self.win_selected_idx == 0 else WHITE
+            pygame.draw.rect(self.screen, border_m, self.menu_btn_rect, width=3 if self.win_selected_idx == 0 else 2, border_radius=8)
             menu_txt = row_font.render("Hauptmenü", True, WHITE)
             self.screen.blit(menu_txt, (self.menu_btn_rect.centerx - menu_txt.get_width() // 2, self.menu_btn_rect.centery - menu_txt.get_height() // 2))
             
@@ -1225,7 +1513,8 @@ class Game:
             if os.path.exists(os.path.join("levels", get_level_name(next_level))):
                 self.next_btn_rect = pygame.Rect(sw // 2 + 20, sh - 70, 190, 45)
                 pygame.draw.rect(self.screen, (50, 150, 50), self.next_btn_rect, border_radius=8)
-                pygame.draw.rect(self.screen, WHITE, self.next_btn_rect, width=2, border_radius=8)
+                border_n = YELLOW if self.win_selected_idx == 1 else WHITE
+                pygame.draw.rect(self.screen, border_n, self.next_btn_rect, width=3 if self.win_selected_idx == 1 else 2, border_radius=8)
                 next_txt = row_font.render("Nächstes Level", True, WHITE)
                 self.screen.blit(next_txt, (self.next_btn_rect.centerx - next_txt.get_width() // 2, self.next_btn_rect.centery - next_txt.get_height() // 2))
             else:
@@ -1242,8 +1531,13 @@ class Game:
             ctrl_font = pygame.font.SysFont(None, 24, bold=True)
             
             pygame.draw.rect(self.screen, (70, 70, 70), self.hs_prev_rect, border_radius=5)
+            border_p = YELLOW if self.hs_selected_idx == 0 else WHITE
+            pygame.draw.rect(self.screen, border_p, self.hs_prev_rect, width=3 if self.hs_selected_idx == 0 else 1, border_radius=5)
+
             pygame.draw.rect(self.screen, (70, 70, 70), self.hs_next_rect, border_radius=5)
-            
+            border_nx = YELLOW if self.hs_selected_idx == 1 else WHITE
+            pygame.draw.rect(self.screen, border_nx, self.hs_next_rect, width=3 if self.hs_selected_idx == 1 else 1, border_radius=5)
+
             prev_txt = ctrl_font.render("<", True, WHITE)
             next_txt = ctrl_font.render(">", True, WHITE)
             self.screen.blit(prev_txt, (self.hs_prev_rect.centerx - prev_txt.get_width() // 2, self.hs_prev_rect.centery - prev_txt.get_height() // 2))
@@ -1265,12 +1559,14 @@ class Game:
                     self.screen.blit(row_txt, (sw // 2 - 130, 180 + idx * 35))
 
             pygame.draw.rect(self.screen, (150, 40, 40), self.hs_delete_rect, border_radius=8)
-            pygame.draw.rect(self.screen, WHITE, self.hs_delete_rect, width=2, border_radius=8)
+            border_d = YELLOW if self.hs_selected_idx == 2 else WHITE
+            pygame.draw.rect(self.screen, border_d, self.hs_delete_rect, width=3 if self.hs_selected_idx == 2 else 2, border_radius=8)
             del_txt = row_font.render("Highscores löschen", True, WHITE)
             self.screen.blit(del_txt, (self.hs_delete_rect.centerx - del_txt.get_width() // 2, self.hs_delete_rect.centery - del_txt.get_height() // 2))
 
             pygame.draw.rect(self.screen, (70, 70, 70), self.hs_back_rect, border_radius=8)
-            pygame.draw.rect(self.screen, WHITE, self.hs_back_rect, width=2, border_radius=8)
+            border_b = YELLOW if self.hs_selected_idx == 3 else WHITE
+            pygame.draw.rect(self.screen, border_b, self.hs_back_rect, width=3 if self.hs_selected_idx == 3 else 2, border_radius=8)
             back_txt = row_font.render("Zurück", True, WHITE)
             self.screen.blit(back_txt, (self.hs_back_rect.centerx - back_txt.get_width() // 2, self.hs_back_rect.centery - back_txt.get_height() // 2))
 

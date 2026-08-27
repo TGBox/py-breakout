@@ -251,6 +251,43 @@ class SoundManager:
             
         return pygame.mixer.Sound(io.BytesIO(self._create_wav_bytes(samples)))
 
+    def _generate_missile_launch(self) -> pygame.mixer.Sound:
+        dur = 0.18
+        n_samples = int(self.sample_rate * dur)
+        samples = []
+        for i in range(n_samples):
+            t = i / self.sample_rate
+            freq = 200 + 400 * (t / dur)
+            noise = (random.random() * 2 - 1) * 0.3
+            env = 1.0 - (t / dur)
+            val = (0.3 * math.sin(2 * math.pi * freq * t) + noise) * env
+            samples.append(val)
+        return pygame.mixer.Sound(io.BytesIO(self._create_wav_bytes(samples)))
+
+    def _generate_shield_hit(self) -> pygame.mixer.Sound:
+        dur = 0.12
+        n_samples = int(self.sample_rate * dur)
+        samples = []
+        for i in range(n_samples):
+            t = i / self.sample_rate
+            freq = 800 - 400 * (t / dur)
+            env = 1.0 - (t / dur)
+            val = 0.4 * math.sin(2 * math.pi * freq * t) * env
+            samples.append(val)
+        return pygame.mixer.Sound(io.BytesIO(self._create_wav_bytes(samples)))
+
+    def _generate_combo_up(self) -> pygame.mixer.Sound:
+        dur = 0.14
+        n_samples = int(self.sample_rate * dur)
+        samples = []
+        for i in range(n_samples):
+            t = i / self.sample_rate
+            freq = 500 + 500 * (t / dur)
+            env = 1.0 - (t / dur)
+            val = 0.35 if (t * freq) % 1.0 < 0.5 else -0.35
+            samples.append(val * env)
+        return pygame.mixer.Sound(io.BytesIO(self._create_wav_bytes(samples)))
+
     def _load_or_generate_sounds(self):
         sound_generators = {
             "paddle_hit": self._generate_paddle_hit,
@@ -260,6 +297,9 @@ class SoundManager:
             "powerup": self._generate_powerup,
             "powerdown": self._generate_powerdown,
             "laser": self._generate_laser,
+            "missile_launch": self._generate_missile_launch,
+            "shield_hit": self._generate_shield_hit,
+            "combo_up": self._generate_combo_up,
             "boss_hit": self._generate_boss_hit,
             "boss_shoot": self._generate_boss_shoot,
             "paddle_stun": self._generate_paddle_stun,
