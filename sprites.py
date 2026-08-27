@@ -193,6 +193,84 @@ class Block(pygame.sprite.Sprite):
         return self.health <= 0
 
 
+class BossProjectile(pygame.sprite.Sprite):
+    def __init__(self, x: int, y: int, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
+        self.width = 10
+        self.height = 18
+        self.image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        pygame.draw.ellipse(self.image, (255, 60, 60), (0, 0, self.width, self.height))
+        pygame.draw.ellipse(self.image, (255, 220, 0), (2, 2, self.width - 4, self.height - 4))
+        self.rect = self.image.get_rect(center=(x, y))
+        self.speed_y = 5.5
+
+    def update(self, screen_height: int = SCREEN_HEIGHT):
+        self.rect.y += int(self.speed_y)
+        if self.rect.top > screen_height:
+            self.kill()
+
+
+class Boss(pygame.sprite.Sprite):
+    def __init__(self, screen_width: int = SCREEN_WIDTH, health: int = 25, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
+        self.health = health
+        self.max_health = health
+        self.width = 140
+        self.height = 42
+        self.speed_x = 3.5
+        self.shoot_timer = 0
+        self.shoot_interval = 85  # Frames (ca. 1.4 Sekunden)
+        self.pending_projectile: BossProjectile | None = None
+        
+        self.image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.rect = self.image.get_rect(centerx=screen_width // 2, top=65)
+        self._update_appearance()
+
+    def _update_appearance(self):
+        self.image.fill((0, 0, 0, 0))
+        # Metallischer Rumpf mit leuchtendem Kern
+        pygame.draw.rect(self.image, (160, 30, 40), (0, 0, self.width, self.height), border_radius=10)
+        pygame.draw.rect(self.image, (255, 80, 80), (4, 4, self.width - 8, self.height - 8), border_radius=8)
+        pygame.draw.rect(self.image, (255, 215, 0), (0, 0, self.width, self.height), width=3, border_radius=10)
+        
+        # Leuchtendes Auge / Kern
+        core_w = max(20, self.width // 4)
+        pygame.draw.ellipse(self.image, (255, 255, 255), (self.width // 2 - core_w // 2, self.height // 2 - 8, core_w, 16))
+        pygame.draw.ellipse(self.image, (255, 0, 0), (self.width // 2 - core_w // 4, self.height // 2 - 5, core_w // 2, 10))
+
+        # HP-Text auf dem Boss
+        font = pygame.font.SysFont(None, 20, bold=True)
+        txt = font.render(f"BOSS HP: {max(0, self.health)}", True, WHITE)
+        self.image.blit(txt, (self.width // 2 - txt.get_width() // 2, 4))
+
+    def reposition_and_rescale(self, screen_width: int, _screen_height: int):
+        self.width = max(120, int(screen_width * 0.18))
+        self.height = 42
+        old_centerx = self.rect.centerx
+        self.rect = pygame.Rect(0, 65, self.width, self.height)
+        self.rect.centerx = max(self.width // 2, min(screen_width - self.width // 2, old_centerx))
+        self._update_appearance()
+
+    def update(self, screen_width: int = SCREEN_WIDTH, *args: Any, **kwargs: Any) -> None:
+        self.rect.x += int(self.speed_x)
+        if self.rect.left <= 20:
+            self.rect.left = 20
+            self.speed_x *= -1
+        elif self.rect.right >= screen_width - 20:
+            self.rect.right = screen_width - 20
+            self.speed_x *= -1
+
+        self.shoot_timer += 1
+        if self.shoot_timer >= self.shoot_interval:
+            self.shoot_timer = 0
+            self.pending_projectile = BossProjectile(self.rect.centerx, self.rect.bottom)
+
+    def hit(self, damage: int = 1) -> bool:
+        self.health -= damage
+        self._update_appearance()
+        return self.health <= 0
+
+
 class SecureBorder(pygame.sprite.Sprite):
     """Sicherheitsnetz unten am Bildschirmrand"""
     def __init__(self, screen_width: int = SCREEN_WIDTH, screen_height: int = SCREEN_HEIGHT, *groups: pygame.sprite.Group[Any]):
@@ -216,6 +294,14 @@ class Paddle(pygame.sprite.Sprite):
         self.rect.bottom = SCREEN_HEIGHT - 30
         self.speed = 8
         self.inverted_controls = False
+        self.stunned_until_ticks = 0
+
+    def stun(self, duration_ms: int = 1500):
+        now = pygame.time.get_ticks()
+        self.stunned_until_ticks = now + duration_ms
+
+    def is_stunned(self) -> bool:
+        return pygame.time.get_ticks() < self.stunned_until_ticks
 
     def update(self, screen_width: int = SCREEN_WIDTH):
         keys = pygame.key.get_pressed()
@@ -225,15 +311,21 @@ class Paddle(pygame.sprite.Sprite):
         if self.inverted_controls:
             move_left, move_right = move_right, move_left
 
+        current_speed = self.speed * 0.35 if self.is_stunned() else self.speed
+
         if move_left:
-            self.rect.x -= self.speed
+            self.rect.x -= int(current_speed)
         if move_right:
-            self.rect.x += self.speed
+            self.rect.x += int(current_speed)
             
         if self.rect.left < 0: 
             self.rect.left = 0
         if self.rect.right > screen_width: 
             self.rect.right = screen_width
+
+        # Visuelles Feedback bei Betäubung
+        if self.is_stunned() and (pygame.time.get_ticks() // 100) % 2 == 0:
+            pygame.draw.rect(self.image, (255, 230, 0), (0, 0, self.rect.width, self.rect.height), 2)
 
 
 class Ball(pygame.sprite.Sprite):

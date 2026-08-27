@@ -6,7 +6,7 @@ import random
 from typing import Any, cast
 from settings import *
 from level_manager import LevelManager
-from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile
+from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, Boss, BossProjectile
 from menu import LevelSelectionMenu, MainMenu
 from editor import LevelEditor
 
@@ -66,6 +66,8 @@ class Game:
         self.lasers: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.particles: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.secure_borders: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.bosses: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.boss_projectiles: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.safety_net: SafetyNet | None = None
         
         self.paddle: Paddle = Paddle()
@@ -140,6 +142,8 @@ class Game:
         self.lasers.empty()
         self.particles.empty()
         self.secure_borders.empty()
+        self.bosses.empty()
+        self.boss_projectiles.empty()
         if self.safety_net:
             self.safety_net.kill()
             self.safety_net = None
@@ -159,9 +163,13 @@ class Game:
         
         level_file = get_level_name(self.current_level_num)
         sw, sh = self.screen.get_width(), self.screen.get_height()
-        self.blocks = self.level_manager.load_level(level_file, sw, sh)
+        self.blocks, boss = self.level_manager.load_level(level_file, sw, sh, level_num=self.current_level_num)
         
-        if len(self.blocks) == 0:
+        if boss:
+            self.bosses.add(boss)
+            self.all_sprites.add(boss)
+
+        if len(self.blocks) == 0 and not boss:
             self.state = STATE_MENU
             return
 
@@ -447,6 +455,10 @@ class Game:
             for block in self.blocks:
                 if hasattr(block, 'reposition_and_rescale'):
                     block.reposition_and_rescale(sw, sh)
+
+            for boss in self.bosses:
+                if hasattr(boss, 'reposition_and_rescale'):
+                    boss.reposition_and_rescale(sw, sh)
                     
             if self.safety_net and self.safety_net.alive():
                 self.safety_net.image = pygame.Surface((sw, 8))
@@ -633,6 +645,16 @@ class Game:
             self.check_timers()
             self.particles.update()
             
+            # --- BOSS UPDATE & GESCHOSSE ---
+            for boss in list(self.bosses):
+                boss.update(sw)
+                if boss.pending_projectile:
+                    self.boss_projectiles.add(boss.pending_projectile)
+                    self.all_sprites.add(boss.pending_projectile)
+                    boss.pending_projectile = None
+            
+            self.boss_projectiles.update(sh)
+
             # Magnet effect
             if "magnet" in self.active_effects:
                 for ball in self.balls:
@@ -661,8 +683,30 @@ class Game:
             self.lasers.update()
             self.balls.update(self.time_factor, sw, sh)
 
+            # --- BOSS-GESCHOSS KOLLISIONEN MIT PADDLE & ABWEHR ---
+            hit_projectiles = pygame.sprite.spritecollide(cast(Any, self.paddle), self.boss_projectiles, True)
+            for proj in hit_projectiles:
+                self.paddle.stun(1500)
+                self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
+                self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
+
+            pygame.sprite.groupcollide(self.boss_projectiles, self.secure_borders, True, False)
+            if self.safety_net and self.safety_net.alive():
+                pygame.sprite.spritecollide(self.safety_net, self.boss_projectiles, True)
+
             # --- LASER-KOLLISIONEN ---
             for laser in list(self.lasers):
+                hit_bosses = pygame.sprite.spritecollide(laser, self.bosses, False)
+                if hit_bosses:
+                    laser.kill()
+                    for boss in hit_bosses:
+                        defeated = boss.hit(1)
+                        self.spawn_particles(laser.rect.centerx, laser.rect.top, RED, count=8)
+                        if defeated:
+                            boss.kill()
+                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, GOLD:=(255, 215, 0), count=40)
+                            self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
+
                 hit_blocks = pygame.sprite.spritecollide(laser, self.blocks, False)
                 if hit_blocks:
                     laser.kill()
@@ -676,6 +720,18 @@ class Game:
                                 self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P' if (block.is_powerup or block.block_type == 'P') else None)
             
             for ball in list(self.balls):
+                # --- BALL KOLLISION MIT BOSS ---
+                hit_bosses = pygame.sprite.spritecollide(ball, self.bosses, False)
+                if hit_bosses:
+                    for boss in hit_bosses:
+                        ball.speed_y *= -1
+                        self.spawn_particles(ball.rect.centerx, ball.rect.centery, ORANGE, count=10)
+                        defeated = boss.hit(1)
+                        if defeated:
+                            boss.kill()
+                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, GOLD:=(255, 215, 0), count=40)
+                            self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
+
                 # --- PADDLE-KOLLISION ---
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
                     self.paddle_hits_count += 1
@@ -749,9 +805,11 @@ class Game:
                 self.state = STATE_MENU
                 pygame.display.set_caption(TITLE)
 
-            # --- WIN CONDITION: Mandatory Bricks Cleared ---
+            # --- WIN CONDITION: Mandatory Bricks Cleared & Boss Defeated ---
             mandatory_remaining = [b for b in self.blocks if not b.is_unbreakable and not getattr(b, 'is_powerdown', False)]
-            if len(mandatory_remaining) == 0:
+            boss_alive = any(b.alive() for b in self.bosses)
+
+            if len(mandatory_remaining) == 0 and not boss_alive:
                 elapsed_ms = pygame.time.get_ticks() - self.level_start_ticks
                 self.elapsed_seconds_at_win = elapsed_ms / 1000.0
                 self.final_score = self.calculate_score(self.elapsed_seconds_at_win)
@@ -814,9 +872,25 @@ class Game:
             diff_txt = font_hud.render(f"Diff: {DIFFICULTY_SETTINGS[self.difficulty]['label']}", True, CYAN)
             self.screen.blit(score_txt, (sw - 140, 15))
             self.screen.blit(diff_txt, (20, 15))
+
+            # Boss HP Bar im HUD rendern
+            for boss in self.bosses:
+                if boss.alive():
+                    bar_w = 260
+                    bar_h = 16
+                    bar_x = sw // 2 - bar_w // 2
+                    bar_y = 12
+                    pct = max(0.0, boss.health / boss.max_health)
+                    pygame.draw.rect(self.screen, (40, 40, 40), (bar_x, bar_y, bar_w, bar_h), border_radius=4)
+                    pygame.draw.rect(self.screen, (220, 40, 40), (bar_x, bar_y, int(bar_w * pct), bar_h), border_radius=4)
+                    pygame.draw.rect(self.screen, (255, 215, 0), (bar_x, bar_y, bar_w, bar_h), width=2, border_radius=4)
+                    b_txt = font_hud.render(f"ENDGEGNER: {boss.health} / {boss.max_health} HP", True, WHITE)
+                    self.screen.blit(b_txt, (sw // 2 - b_txt.get_width() // 2, bar_y - 2))
             
             now = pygame.time.get_ticks()
             active_labels = []
+            if self.paddle.is_stunned():
+                active_labels.append("STUNNED (Betäubt!)")
             for etype, expire in list(self.active_effects.items()):
                 rem = expire - now
                 if rem <= 2000 and (now // 200) % 2 == 0:
@@ -824,7 +898,8 @@ class Game:
                 active_labels.append(etype.replace("_", " ").title())
             
             if active_labels:
-                eff_surf = font_hud.render(f"Effekte: {', '.join(active_labels)}", True, GREEN)
+                color = RED if "STUNNED (Betäubt!)" in active_labels else GREEN
+                eff_surf = font_hud.render(f"Effekte: {', '.join(active_labels)}", True, color)
                 self.screen.blit(eff_surf, (20, sh - 25))
         
         if self.state == STATE_PAUSED:
@@ -878,7 +953,7 @@ class Game:
             else:
                 for idx, entry in enumerate(level_scores):
                     row_txt = row_font.render(f"{idx + 1}. {entry['name']} - {entry['score']} Punkte", True, WHITE)
-                    self.screen.blit(row_txt, (sw // 2 - 120, 265 + idx * 25))
+                    self.screen.blit(row_txt, (sw // 2 - 130, 265 + idx * 25))
 
             offset_y = 400
             if self.qualifies_for_highscores and not self.is_score_saved:

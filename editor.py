@@ -39,7 +39,8 @@ class LevelEditor:
             "B": {"color": (220, 40, 40), "label": "Bomben-Block (Taste B)"},
             "X": {"color": (100, 100, 115), "label": "Stahl-Block (Taste X)"},
             "T": {"color": (140, 30, 210), "label": "Portal-Block (Taste T)"},
-            "M": {"color": (255, 170, 0), "label": "Beweglicher Block (Taste M)"}
+            "M": {"color": (255, 170, 0), "label": "Beweglicher Block (Taste M)"},
+            "K": {"color": (255, 215, 0), "label": "Boss / Endgegner (Taste K)"}
         }
         
         self.font = pygame.font.SysFont(None, 22)
@@ -96,113 +97,95 @@ class LevelEditor:
             if event.key == pygame.K_t: self.current_type = "T"
             if event.key == pygame.K_m: self.current_type = "M"
             if event.key == pygame.K_d: self.current_type = "D"
+            if event.key == pygame.K_k: self.current_type = "K"
             if event.key in (pygame.K_b, pygame.K_e): self.current_type = "B"
             if event.key in (pygame.K_x, pygame.K_u): self.current_type = "X"
-            if event.key == pygame.K_t: self.current_type = "T"
-            if event.key == pygame.K_m: self.current_type = "M"
             if event.key == pygame.K_0: self.current_type = "0"
             
-            # Grid-Größenanpassung
+            # Grid-Größe ändern
+            if event.key == pygame.K_RIGHT:
+                self.set_grid_size(self.cols + 1, self.rows)
+            if event.key == pygame.K_LEFT:
+                self.set_grid_size(self.cols - 1, self.rows)
             if event.key == pygame.K_UP:
                 self.set_grid_size(self.cols, self.rows - 1)
-            elif event.key == pygame.K_DOWN:
+            if event.key == pygame.K_DOWN:
                 self.set_grid_size(self.cols, self.rows + 1)
-            elif event.key == pygame.K_RIGHT:
-                self.set_grid_size(self.cols + 1, self.rows)
-            elif event.key == pygame.K_LEFT:
-                self.set_grid_size(self.cols - 1, self.rows)
-
-            # Speichern auslösen
+            
+            # Speichern per S-Taste
             if event.key == pygame.K_s:
                 self.save_level()
 
     def update(self):
-        """Beobachtet kontinuierlich die Maus im Editor-Modus (läuft jeden Frame)"""
+        # Mausklicks kontinuierlich verarbeiten (für flüssiges Malen)
         mouse_buttons = pygame.mouse.get_pressed()
-        mouse_pos = pygame.mouse.get_pos()
-        
-        bw = self.block_width
-        bh = self.block_height
-        grid_limit_y = self.rows * bh
-        if mouse_pos[1] < grid_limit_y:
-            col = mouse_pos[0] // bw
-            row = mouse_pos[1] // bh
+        if mouse_buttons[0] or mouse_buttons[2]:
+            mx, my = pygame.mouse.get_pos()
+            
+            col = mx // self.block_width
+            row = (my - 50) // self.block_height
             
             if 0 <= col < self.cols and 0 <= row < self.rows:
-                if mouse_buttons[0]:    # Linksklick -> Block platzieren
+                if mouse_buttons[0]:
                     self.grid[row][col] = self.current_type
-                elif mouse_buttons[2]:  # Rechtsklick -> Block löschen
+                elif mouse_buttons[2]:
                     self.grid[row][col] = "0"
 
     def save_level(self):
-        # Lokaler Import verhindert den Absturz durch zirkuläre Importe!
-        from game import get_level_name
-
-        if not os.path.exists("levels"):
-            os.makedirs("levels")
+        if not os.path.exists('levels'):
+            os.makedirs('levels')
             
-        level_num = 1
-        while os.path.exists(os.path.join("levels", get_level_name(level_num))):
-            level_num += 1
+        existing = [f for f in os.listdir('levels') if f.startswith('Level') and f.endswith('.txt')]
+        max_num = 0
+        for f in existing:
+            try:
+                num = int(f.replace('Level', '').replace('.txt', ''))
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+                
+        new_num = max_num + 1
+        if new_num <= 9:
+            filename = f"Level00{new_num}.txt"
+        elif new_num <= 99:
+            filename = f"Level0{new_num}.txt"
+        else:
+            filename = f"Level{new_num}.txt"
             
-        filename = os.path.join("levels", get_level_name(level_num))
-        
-        try:
-            with open(filename, "w") as file:
-                for row in self.grid:
-                    line = "".join(row) + "\n"
-                    file.write(line)
-            print(f"[Editor] Level erfolgreich gespeichert unter: {filename}")
-            pygame.display.set_caption(f"GESPEICHERT ALS {get_level_name(level_num)}!")
-        except Exception as e:
-            print(f"[Editor-Fehler] Konnte Level nicht schreiben: {e}")
+        filepath = os.path.join('levels', filename)
+        with open(filepath, 'w') as f:
+            for row in self.grid:
+                f.write("".join(row) + "\n")
+                
+        print(f"[Editor] Level erfolgreich gespeichert unter: {filepath}")
 
     def draw(self):
         self.screen.fill(DARK_GREY)
+        sw, sh = self.screen.get_width(), self.screen.get_height()
         
-        bw = self.block_width
-        bh = self.block_height
-        
-        # 1. Das Raster und die gesetzten Blöcke zeichnen
-        for row in range(self.rows):
-            for col in range(self.cols):
-                block_type = self.grid[row][col]
-                color = self.types.get(block_type, self.types["0"])["color"]
+        # Grid zeichnen
+        for r in range(self.rows):
+            for c in range(self.cols):
+                b_type = self.grid[r][c]
+                rect = pygame.Rect(c * self.block_width, 50 + r * self.block_height, self.block_width, self.block_height)
                 
-                rect = pygame.Rect(col * bw, row * bh, bw - 1, bh - 1)
-                pygame.draw.rect(self.screen, color, rect)
-                
-                if block_type in ("P", "B", "X", "T", "M"):
-                    lbl_txt = self.font.render(block_type, True, BLACK if block_type in ("P", "M") else WHITE)
-                    self.screen.blit(lbl_txt, (rect.x + rect.width//2 - lbl_txt.get_width()//2, 
-                                             rect.y + rect.height//2 - lbl_txt.get_height()//2))
-
-        screen_w = self.screen.get_width()
-        pygame.draw.line(self.screen, WHITE, (0, self.rows * bh), 
-                         (screen_w, self.rows * bh), 2)
+                if b_type != "0":
+                    color = self.types.get(b_type, {}).get("color", WHITE) # type: ignore
+                    pygame.draw.rect(self.screen, color, rect) # type: ignore
+                    pygame.draw.rect(self.screen, BLACK, rect, 1)
+                else:
+                    pygame.draw.rect(self.screen, (50, 50, 50), rect, 1)
+                    
+        # UI & Anleitung
+        info_text = f"Werkzeug: {self.types.get(self.current_type, {}).get('label', 'Unbekannt')} | Grid: {self.cols}x{self.rows}"
+        txt_surf = self.font.render(info_text, True, WHITE)
+        self.screen.blit(txt_surf, (10, 15))
         
-        # 2. UI-Steuerung & Informationen unterhalb des Grids
-        ui_y = self.rows * self.block_height + 10
-        active_label = self.types[self.current_type]['label']
-        sel_text = self.font.render(f"Ausgewaehltes Werkzeug: {active_label}", True, YELLOW)
-        self.screen.blit(sel_text, (20, ui_y))
-        
-        instructions = [
-            "BEDIENUNG:",
-            "- Tasten [1]-[5], [P], [B], [X], [T], [M] oder [0] druecken, um Blocktyp zu wechseln",
-            "- Linke Maustaste: Zeichnen | Rechte Maustaste: Radieren",
-            "- Taste [S]: Als neues Level in /levels/ speichern | Taste [ESC]: Editor schliessen"
-        ]
-
-        for idx, text in enumerate(instructions):
-            color = (50, 150, 255) if idx == 0 else WHITE
-            txt_surf = self.font.render(text, True, color)
-            self.screen.blit(txt_surf, (20, ui_y + 26 + idx * 20))
-            
-        pygame.display.flip()
+        help_text = "Tasten 1-5, P, B, X, T, M, K | 0=Löschen | Pfeile=Raster (+/-) | S=Speichern | ESC=Hauptmenü"
+        help_surf = self.font.render(help_text, True, YELLOW)
+        self.screen.blit(help_surf, (10, sh - 30))
 
 if __name__ == "__main__":
-    # Wenn man die Datei direkt ausführt, startet sie wie gewohnt autonom
     editor = LevelEditor()
     editor.run()
-    pygame.quit()
