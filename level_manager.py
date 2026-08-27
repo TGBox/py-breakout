@@ -50,6 +50,10 @@ class LevelManager:
                     y: int = self.offset_y + row_idx * (block_height + padding)
 
                     block: Block = Block(x, y, block_width, block_height, char)
+                    block.grid_col = col_idx
+                    block.grid_row = row_idx
+                    block.grid_cols = cols
+                    block.grid_rows = rows
                     blocks.add(block)
 
         return blocks

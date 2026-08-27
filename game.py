@@ -373,8 +373,8 @@ class Game:
         self.spawn_particles(center_x, center_y, ORANGE, count=25)
         self.spawn_particles(center_x, center_y, RED, count=15)
         
-        radius_x = BLOCK_WIDTH * 1.6
-        radius_y = BLOCK_HEIGHT * 1.6
+        radius_x = origin_block.width * 1.6
+        radius_y = origin_block.height * 1.6
 
         surrounding = [
             b for b in list(self.blocks)
@@ -435,12 +435,30 @@ class Game:
         self.editor.screen = self.screen
         self.level_selection_menu.screen = self.screen
         self.update_highscore_rects()
+        
+        self.bg_stars = [
+            [random.randint(0, sw), random.randint(0, sh), random.uniform(0.2, 1.2)]
+            for _ in range(50)
+        ]
+        
         if self.state == STATE_PLAYING:
+            self.paddle.rect.bottom = sh - 30
+            
+            for block in self.blocks:
+                if hasattr(block, 'reposition_and_rescale'):
+                    block.reposition_and_rescale(sw, sh)
+                    
             if self.safety_net and self.safety_net.alive():
                 self.safety_net.image = pygame.Surface((sw, 8))
                 self.safety_net.image.fill((0, 220, 255))
                 pygame.draw.rect(self.safety_net.image, WHITE, (0, 0, sw, 8), 1)
                 self.safety_net.rect = self.safety_net.image.get_rect(topleft=(0, sh - 12))
+                
+            for sb in self.secure_borders:
+                sb.image = pygame.Surface((sw, 8))
+                sb.image.fill(CYAN)
+                pygame.draw.rect(sb.image, WHITE, (0, 0, sw, 8), 1)
+                sb.rect = sb.image.get_rect(topleft=(0, sh - 12))
 
     def update_highscore_rects(self):
         sw, sh = self.screen.get_width(), self.screen.get_height()
@@ -611,6 +629,7 @@ class Game:
 
     def update(self):
         if self.state == STATE_PLAYING:
+            sw, sh = self.screen.get_width(), self.screen.get_height()
             self.check_timers()
             self.particles.update()
             
@@ -636,11 +655,11 @@ class Game:
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
-            self.paddle.update()
-            self.powerups.update()
+            self.paddle.update(sw)
+            self.powerups.update(sh)
             self.blocks.update()
             self.lasers.update()
-            self.balls.update(self.time_factor)
+            self.balls.update(self.time_factor, sw, sh)
 
             # --- LASER-KOLLISIONEN ---
             for laser in list(self.lasers):
@@ -710,7 +729,6 @@ class Game:
                                     self.spawn_powerup(block.rect.x, block.rect.y, guaranteed_type='P' if (block.is_powerup or block.block_type == 'P') else None)
 
                 # Aus-dem-Spiel- & Schutznetz-Prüfung
-                sw, sh = self.screen.get_width(), self.screen.get_height()
                 if ball.rect.bottom >= sh - 15:
                     if self.safety_net and self.safety_net.alive():
                         ball.rect.bottom = self.safety_net.rect.top

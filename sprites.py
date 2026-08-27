@@ -61,7 +61,10 @@ class Block(pygame.sprite.Sprite):
         self.width = width if width > 0 else BLOCK_WIDTH
         self.height = height if height > 0 else BLOCK_HEIGHT
         
-        self.image: pygame.Surface = pygame.Surface((self.width, self.height))
+        self.grid_col = 0
+        self.grid_row = 0
+        self.grid_cols = 10
+        self.grid_rows = 10
         
         # Standardwerte
         self.health = 1
@@ -73,54 +76,66 @@ class Block(pygame.sprite.Sprite):
         self.start_x = x
         self.move_range = 70
         self.move_dir = 1
-        
-        font_size = max(10, min(18, int(self.height * 0.6)))
-        font = pygame.font.SysFont(None, font_size, bold=True)
 
-        # Farbe und Eigenschaften basierend auf dem Typ setzen
-        if self.block_type == '1':
-            self.image.fill(GREEN)
-        elif self.block_type in ('2', '3', '4', '5'):
+        if self.block_type in ('2', '3', '4', '5'):
             self.health = int(self.block_type)
-            self.image.fill(BLOCK_HEALTH_COLORS.get(self.health, YELLOW))
         elif self.block_type in ('P', 'powerup'):
-            self.image.fill(BLUE)
             self.is_powerup = True
         elif self.block_type in ('D', 'powerdown'):
-            self.image.fill(DARK_PURPLE)
             self.is_powerdown = True
         elif self.block_type in ('B', 'E', 'bomb', 'explosive'):
             self.health = 1
             self.is_explosive = True
+        elif self.block_type in ('X', 'U', 'steel', 'unbreakable'):
+            self.health = 999
+            self.is_unbreakable = True
+        elif self.block_type == 'T':
+            self.health = 999
+            self.is_unbreakable = True
+        elif self.block_type == 'M':
+            self.health = 1
+            self.move_speed = 2
+            
+        self.image: pygame.Surface = pygame.Surface((self.width, self.height))
+        self.rect = self.image.get_rect(topleft=(x, y))
+        self._update_appearance()
+
+    def _update_appearance(self):
+        self.image = pygame.Surface((self.width, self.height))
+        font_size = max(10, min(18, int(self.height * 0.6)))
+        font = pygame.font.SysFont(None, font_size, bold=True)
+
+        if self.block_type == '1':
+            self.image.fill(GREEN)
+        elif self.block_type in ('2', '3', '4', '5'):
+            self.image.fill(BLOCK_HEALTH_COLORS.get(self.health, YELLOW))
+        elif self.block_type in ('P', 'powerup'):
+            self.image.fill(BLUE)
+        elif self.block_type in ('D', 'powerdown'):
+            self.image.fill(DARK_PURPLE)
+        elif self.block_type in ('B', 'E', 'bomb', 'explosive'):
             self.image.fill((220, 40, 40))
             pygame.draw.rect(self.image, (255, 220, 0), (0, 0, self.width, self.height), 2)
             txt = font.render("BOMB", True, WHITE)
             self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         elif self.block_type in ('X', 'U', 'steel', 'unbreakable'):
-            self.health = 999
-            self.is_unbreakable = True
             self.image.fill((100, 100, 115))
             pygame.draw.rect(self.image, (210, 210, 230), (0, 0, self.width, self.height), 2)
             txt = font.render("STAHL", True, (220, 220, 220))
             self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
-        elif self.block_type == 'T':  # Portal- / Teleportblock
-            self.health = 999
-            self.is_unbreakable = True
+        elif self.block_type == 'T':
             self.image.fill((140, 30, 210))
             pygame.draw.rect(self.image, (0, 255, 255), (0, 0, self.width, self.height), 2)
             txt = font.render("PORTAL", True, (0, 255, 255))
             self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
-        elif self.block_type == 'M':  # Beweglicher Block
-            self.health = 1
-            self.move_speed = 2
+        elif self.block_type == 'M':
             self.image.fill((255, 170, 0))
             pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 2)
             txt = font.render("MOVE", True, BLACK)
             self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
             
-        self.rect = self.image.get_rect(topleft=(x, y))
         self._render_decorations()
-        
+
     def _render_decorations(self):
         font_size = max(10, min(18, int(self.height * 0.6)))
         font = pygame.font.SysFont(None, font_size, bold=True)
@@ -132,6 +147,27 @@ class Block(pygame.sprite.Sprite):
             pygame.draw.rect(self.image, MAGENTA, (0, 0, self.width, self.height), 2)
             txt = font.render("D", True, MAGENTA)
             self.image.blit(txt, (self.width // 2 - txt.get_width() // 2, self.height // 2 - txt.get_height() // 2))
+
+    def reposition_and_rescale(self, screen_width: int, screen_height: int, padding: int = 4, offset_y: int = 60):
+        if not hasattr(self, 'grid_cols') or self.grid_cols <= 0:
+            return
+        avail_width = screen_width - 40
+        block_width = max(15, (avail_width - (self.grid_cols - 1) * padding) // self.grid_cols)
+        avail_height = int(screen_height * 0.45) - offset_y
+        block_height = max(12, (avail_height - (self.grid_rows - 1) * padding) // self.grid_rows) if self.grid_rows > 0 else 30
+        total_width = self.grid_cols * block_width + (self.grid_cols - 1) * padding
+        offset_x = (screen_width - total_width) // 2
+
+        self.width = block_width
+        self.height = block_height
+        self.start_x = offset_x + self.grid_col * (block_width + padding)
+        self.rect = pygame.Rect(
+            self.start_x,
+            offset_y + self.grid_row * (block_height + padding),
+            block_width,
+            block_height
+        )
+        self._update_appearance()
 
     def update(self):
         if self.block_type == 'M' and self.move_speed > 0:
@@ -152,10 +188,7 @@ class Block(pygame.sprite.Sprite):
             return True
             
         self.health -= 1
-        
-        if self.health >= 1 and self.health in BLOCK_HEALTH_COLORS:
-            self.image.fill(BLOCK_HEALTH_COLORS[self.health])
-            pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 1)
+        self._update_appearance()
             
         return self.health <= 0
 
@@ -184,7 +217,7 @@ class Paddle(pygame.sprite.Sprite):
         self.speed = 8
         self.inverted_controls = False
 
-    def update(self):
+    def update(self, screen_width: int = SCREEN_WIDTH):
         keys = pygame.key.get_pressed()
         move_left = keys[pygame.K_LEFT] or keys[pygame.K_a]
         move_right = keys[pygame.K_RIGHT] or keys[pygame.K_d]
@@ -199,8 +232,8 @@ class Paddle(pygame.sprite.Sprite):
             
         if self.rect.left < 0: 
             self.rect.left = 0
-        if self.rect.right > SCREEN_WIDTH: 
-            self.rect.right = SCREEN_WIDTH
+        if self.rect.right > screen_width: 
+            self.rect.right = screen_width
 
 
 class Ball(pygame.sprite.Sprite):
@@ -255,7 +288,7 @@ class Ball(pygame.sprite.Sprite):
         else:
             pygame.draw.circle(self.image, WHITE, (self.radius, self.radius), self.radius, 1)
 
-    def update(self, time_factor: float = 1.0):
+    def update(self, time_factor: float = 1.0, screen_width: int = SCREEN_WIDTH, screen_height: int = SCREEN_HEIGHT):
         if self.attached:
             return
             
@@ -269,8 +302,8 @@ class Ball(pygame.sprite.Sprite):
             self.rect.left = 0
             self.x = float(self.rect.x)
             self.speed_x *= -1
-        elif self.rect.right >= SCREEN_WIDTH:
-            self.rect.right = SCREEN_WIDTH
+        elif self.rect.right >= screen_width:
+            self.rect.right = screen_width
             self.x = float(self.rect.x)
             self.speed_x *= -1
             
@@ -364,7 +397,7 @@ class PowerUp(pygame.sprite.Sprite):
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
         self.speed_y = 3  
 
-    def update(self):
+    def update(self, screen_height: int = SCREEN_HEIGHT):
         self.rect.y += self.speed_y
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > screen_height:
             self.kill()
