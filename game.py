@@ -41,8 +41,10 @@ class Game:
         # Highscore-Rechtecke für Klicks definieren
         self.update_highscore_rects()
         
-        # Scoring-Metriken
+        # Scoring-Metriken & Zeitmessung
         self.level_start_ticks = 0
+        self.effective_elapsed_seconds = 0.0
+        self.last_frame_ticks = 0
         self.elapsed_seconds_at_win = 0.0
         self.paddle_hits_count = 0
         self.powerups_collected_count = 0
@@ -153,6 +155,8 @@ class Game:
         self.score_multiplier = 1.0
         
         self.level_start_ticks = pygame.time.get_ticks()
+        self.last_frame_ticks = pygame.time.get_ticks()
+        self.effective_elapsed_seconds = 0.0
         self.elapsed_seconds_at_win = 0.0
         self.paddle_hits_count = 0
         self.powerups_collected_count = 0
@@ -417,9 +421,10 @@ class Game:
             ball.y = float(ball.rect.y)
             ball.last_teleport_ticks = now
 
-    def calculate_score(self, elapsed_seconds: float) -> int:
+    def calculate_score(self, elapsed_seconds: float | None = None) -> int:
         base_score = 10000
-        time_penalty = int(elapsed_seconds * 10 * (1.0 / self.time_factor))
+        seconds = self.effective_elapsed_seconds if elapsed_seconds is None else elapsed_seconds
+        time_penalty = int(seconds * 10)
         hit_penalty = self.paddle_hits_count * 20
         powerup_penalty = self.powerups_collected_count * 100
         
@@ -427,8 +432,7 @@ class Game:
         return max(0, int(score))
 
     def calculate_current_score(self) -> int:
-        elapsed_seconds = (pygame.time.get_ticks() - self.level_start_ticks) / 1000.0
-        return self.calculate_score(elapsed_seconds)
+        return self.calculate_score()
 
     def toggle_fullscreen(self):
         self.is_fullscreen = not self.is_fullscreen
@@ -596,6 +600,7 @@ class Game:
             elif self.state == STATE_PAUSED:
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_p, pygame.K_ESCAPE):
                     self.state = STATE_PLAYING
+                    self.last_frame_ticks = pygame.time.get_ticks()
 
             elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
                 if self.qualifies_for_highscores and not self.is_score_saved:
@@ -642,6 +647,13 @@ class Game:
     def update(self):
         if self.state == STATE_PLAYING:
             sw, sh = self.screen.get_width(), self.screen.get_height()
+            
+            # --- ZEITMESSUNG MIT SLOW-MOTION SKALIERUNG ---
+            now = pygame.time.get_ticks()
+            dt = (now - self.last_frame_ticks) / 1000.0
+            self.last_frame_ticks = now
+            self.effective_elapsed_seconds += dt * self.time_factor
+
             self.check_timers()
             self.particles.update()
             
@@ -810,9 +822,8 @@ class Game:
             boss_alive = any(b.alive() for b in self.bosses)
 
             if len(mandatory_remaining) == 0 and not boss_alive:
-                elapsed_ms = pygame.time.get_ticks() - self.level_start_ticks
-                self.elapsed_seconds_at_win = elapsed_ms / 1000.0
-                self.final_score = self.calculate_score(self.elapsed_seconds_at_win)
+                self.elapsed_seconds_at_win = (pygame.time.get_ticks() - self.level_start_ticks) / 1000.0
+                self.final_score = self.calculate_score()
                 
                 next_level = self.current_level_num + 1
                 if next_level > self.unlocked_level:
