@@ -1,4 +1,5 @@
 # editor.py
+from typing import Any
 import pygame
 import os
 from settings import *
@@ -13,15 +14,13 @@ class LevelEditor:
         else:
             # Nur ausführen, wenn die editor.py separat gestartet wird
             pygame.init()
-            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen = pygame.display.set_mode((DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT), pygame.RESIZABLE)
             pygame.display.set_caption("Breakout - Level Editor")
             self.clock = pygame.time.Clock()
         
         # Grid-Einstellungen (Passend zur LevelManager-Logik)
         self.cols = 10
         self.rows = 10  # Maximale vertikale Reihen für Blöcke
-        self.block_width = SCREEN_WIDTH // self.cols
-        self.block_height = 30
         
         # Leeres Raster initialisieren (0 = Leer)
         self.grid = [["0" for _ in range(self.cols)] for _ in range(self.rows)]
@@ -45,6 +44,28 @@ class LevelEditor:
         
         self.font = pygame.font.SysFont(None, 22)
         self.running = True
+
+    @property
+    def block_width(self) -> int:
+        return self.screen.get_width() // max(1, self.cols)
+
+    @property
+    def block_height(self) -> int:
+        max_h = int(self.screen.get_height() * 0.48)
+        return max(12, max_h // max(1, self.rows))
+
+    def set_grid_size(self, new_cols: int, new_rows: int):
+        new_cols = max(5, min(35, new_cols))
+        new_rows = max(5, min(30, new_rows))
+        
+        new_grid = [["0" for _ in range(new_cols)] for _ in range(new_rows)]
+        for r in range(min(self.rows, new_rows)):
+            for c in range(min(self.cols, new_cols)):
+                new_grid[r][c] = self.grid[r][c]
+                
+        self.cols = new_cols
+        self.rows = new_rows
+        self.grid = new_grid
 
     def run(self):
         """Wird NUR genutzt, wenn die editor.py eigenständig gestartet wird!"""
@@ -74,8 +95,23 @@ class LevelEditor:
             if event.key == pygame.K_x: self.current_type = "X"
             if event.key == pygame.K_t: self.current_type = "T"
             if event.key == pygame.K_m: self.current_type = "M"
+            if event.key == pygame.K_d: self.current_type = "D"
+            if event.key in (pygame.K_b, pygame.K_e): self.current_type = "B"
+            if event.key in (pygame.K_x, pygame.K_u): self.current_type = "X"
+            if event.key == pygame.K_t: self.current_type = "T"
+            if event.key == pygame.K_m: self.current_type = "M"
             if event.key == pygame.K_0: self.current_type = "0"
             
+            # Grid-Größenanpassung
+            if event.key == pygame.K_UP:
+                self.set_grid_size(self.cols, self.rows - 1)
+            elif event.key == pygame.K_DOWN:
+                self.set_grid_size(self.cols, self.rows + 1)
+            elif event.key == pygame.K_RIGHT:
+                self.set_grid_size(self.cols + 1, self.rows)
+            elif event.key == pygame.K_LEFT:
+                self.set_grid_size(self.cols - 1, self.rows)
+
             # Speichern auslösen
             if event.key == pygame.K_s:
                 self.save_level()
@@ -85,10 +121,12 @@ class LevelEditor:
         mouse_buttons = pygame.mouse.get_pressed()
         mouse_pos = pygame.mouse.get_pos()
         
-        grid_limit_y = self.rows * self.block_height
+        bw = self.block_width
+        bh = self.block_height
+        grid_limit_y = self.rows * bh
         if mouse_pos[1] < grid_limit_y:
-            col = mouse_pos[0] // self.block_width
-            row = mouse_pos[1] // self.block_height
+            col = mouse_pos[0] // bw
+            row = mouse_pos[1] // bh
             
             if 0 <= col < self.cols and 0 <= row < self.rows:
                 if mouse_buttons[0]:    # Linksklick -> Block platzieren
@@ -122,14 +160,16 @@ class LevelEditor:
     def draw(self):
         self.screen.fill(DARK_GREY)
         
+        bw = self.block_width
+        bh = self.block_height
+        
         # 1. Das Raster und die gesetzten Blöcke zeichnen
         for row in range(self.rows):
             for col in range(self.cols):
                 block_type = self.grid[row][col]
-                color = self.types[block_type]["color"]
+                color = self.types.get(block_type, self.types["0"])["color"]
                 
-                rect = pygame.Rect(col * self.block_width, row * self.block_height, 
-                                   self.block_width - 2, self.block_height - 2)
+                rect = pygame.Rect(col * bw, row * bh, bw - 1, bh - 1)
                 pygame.draw.rect(self.screen, color, rect)
                 
                 if block_type in ("P", "B", "X", "T", "M"):
@@ -137,8 +177,9 @@ class LevelEditor:
                     self.screen.blit(lbl_txt, (rect.x + rect.width//2 - lbl_txt.get_width()//2, 
                                              rect.y + rect.height//2 - lbl_txt.get_height()//2))
 
-        pygame.draw.line(self.screen, WHITE, (0, self.rows * self.block_height), 
-                         (SCREEN_WIDTH, self.rows * self.block_height), 2)
+        screen_w = self.screen.get_width()
+        pygame.draw.line(self.screen, WHITE, (0, self.rows * bh), 
+                         (screen_w, self.rows * bh), 2)
         
         # 2. UI-Steuerung & Informationen unterhalb des Grids
         ui_y = self.rows * self.block_height + 10
@@ -152,7 +193,7 @@ class LevelEditor:
             "- Linke Maustaste: Zeichnen | Rechte Maustaste: Radieren",
             "- Taste [S]: Als neues Level in /levels/ speichern | Taste [ESC]: Editor schliessen"
         ]
-        
+
         for idx, text in enumerate(instructions):
             color = (50, 150, 255) if idx == 0 else WHITE
             txt_surf = self.font.render(text, True, color)
