@@ -6,7 +6,7 @@ import random
 from typing import Any, cast
 from settings import *
 from level_manager import LevelManager
-from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, Boss, BossProjectile
+from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, Boss, BossProjectile, FloatingText
 from menu import LevelSelectionMenu, MainMenu
 from editor import LevelEditor
 
@@ -54,6 +54,10 @@ class Game:
         self.is_score_saved = False
         self.player_name = ""
         
+        # Screen-Shake State
+        self.shake_amount: float = 0.0
+        self.shake_until_ticks: int = 0
+        
         # Menü & Editor
         self.menu = MainMenu()
         self.menu.set_difficulty_label(self.difficulty)
@@ -70,6 +74,7 @@ class Game:
         self.secure_borders: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.bosses: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.boss_projectiles: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.floating_texts: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.safety_net: SafetyNet | None = None
         
         self.paddle: Paddle = Paddle()
@@ -83,6 +88,14 @@ class Game:
             for _ in range(50)
         ]
         self.fireworks_timer = 0
+
+    def add_screen_shake(self, intensity: float, duration_ms: int = 250):
+        self.shake_amount = max(self.shake_amount, intensity)
+        self.shake_until_ticks = pygame.time.get_ticks() + duration_ms
+
+    def spawn_floating_text(self, x: float, y: float, text: str, color: tuple[int, int, int] = WHITE, font_size: int = 22):
+        ft = FloatingText(x, y, text, color=color, font_size=font_size)
+        self.floating_texts.add(ft)
 
     def load_game_data(self):
         """Lädt alle Spieldaten aus game_data.json mit Abwärtskompatibilität."""
@@ -146,6 +159,7 @@ class Game:
         self.secure_borders.empty()
         self.bosses.empty()
         self.boss_projectiles.empty()
+        self.floating_texts.empty()
         if self.safety_net:
             self.safety_net.kill()
             self.safety_net = None
@@ -153,6 +167,7 @@ class Game:
         self.active_effects.clear()
         self.time_factor = 1.0
         self.score_multiplier = 1.0
+        self.shake_amount = 0.0
         
         self.level_start_ticks = pygame.time.get_ticks()
         self.last_frame_ticks = pygame.time.get_ticks()
@@ -228,6 +243,8 @@ class Game:
         duration = int(8000 * float(diff_cfg["timer_mult"]))
         etype = powerup.effect_type
         
+        self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, etype.replace('_', ' ').upper(), GREEN, font_size=24)
+
         if etype == "sticky_paddle":
             self.paddle_sticky = True
             current_width = self.paddle.rect.width
@@ -384,6 +401,8 @@ class Game:
         center_y = origin_block.rect.centery
         self.spawn_particles(center_x, center_y, ORANGE, count=25)
         self.spawn_particles(center_x, center_y, RED, count=15)
+        self.add_screen_shake(6.0, 300)
+        self.spawn_floating_text(center_x, center_y, "BOOM!", RED, font_size=26)
         
         radius_x = origin_block.width * 1.6
         radius_y = origin_block.height * 1.6
@@ -656,6 +675,7 @@ class Game:
 
             self.check_timers()
             self.particles.update()
+            self.floating_texts.update()
             
             # --- BOSS UPDATE & GESCHOSSE ---
             for boss in list(self.bosses):
@@ -700,6 +720,8 @@ class Game:
             for proj in hit_projectiles:
                 self.paddle.stun(1500)
                 self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
+                self.add_screen_shake(4.0, 200)
+                self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24)
                 self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
 
             pygame.sprite.groupcollide(self.boss_projectiles, self.secure_borders, True, False)
@@ -714,9 +736,12 @@ class Game:
                     for boss in hit_bosses:
                         defeated = boss.hit(1)
                         self.spawn_particles(laser.rect.centerx, laser.rect.top, RED, count=8)
+                        self.spawn_floating_text(laser.rect.centerx, laser.rect.top - 5, "+250", ORANGE)
                         if defeated:
                             boss.kill()
-                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, GOLD:=(255, 215, 0), count=40)
+                            self.add_screen_shake(12.0, 600)
+                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, (255, 215, 0), count=40)
+                            self.spawn_floating_text(boss.rect.centerx, boss.rect.centery, "BOSS DEFEATED!", (255, 215, 0), font_size=32)
                             self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
 
                 hit_blocks = pygame.sprite.spritecollide(laser, self.blocks, False)
@@ -726,6 +751,7 @@ class Game:
                         destroyed = block.hit(force_destroy=True)
                         if destroyed:
                             block.kill()
+                            self.spawn_floating_text(block.rect.centerx, block.rect.centery, "+100", YELLOW)
                             if getattr(block, 'is_explosive', False) or block.block_type == 'B':
                                 self.trigger_explosion(block)
                             else:
@@ -738,10 +764,14 @@ class Game:
                     for boss in hit_bosses:
                         ball.speed_y *= -1
                         self.spawn_particles(ball.rect.centerx, ball.rect.centery, ORANGE, count=10)
+                        self.add_screen_shake(3.0, 150)
+                        self.spawn_floating_text(ball.rect.centerx, ball.rect.centery, "+250", ORANGE)
                         defeated = boss.hit(1)
                         if defeated:
                             boss.kill()
-                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, GOLD:=(255, 215, 0), count=40)
+                            self.add_screen_shake(12.0, 600)
+                            self.spawn_particles(boss.rect.centerx, boss.rect.centery, (255, 215, 0), count=40)
+                            self.spawn_floating_text(boss.rect.centerx, boss.rect.centery, "BOSS DEFEATED!", (255, 215, 0), font_size=32)
                             self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
 
                 # --- PADDLE-KOLLISION ---
@@ -789,6 +819,8 @@ class Game:
                             destroyed = block.hit(force_destroy=force)
                             if destroyed:
                                 block.kill()
+                                pts = 100 * block.health if hasattr(block, 'health') else 100
+                                self.spawn_floating_text(block.rect.centerx, block.rect.centery, f"+{pts}", YELLOW)
                                 if getattr(block, 'is_explosive', False) or block.block_type == 'B':
                                     self.trigger_explosion(block)
                                 elif getattr(block, 'is_powerdown', False) or block.block_type == 'D':
@@ -844,6 +876,7 @@ class Game:
                 
         elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
             self.particles.update()
+            self.floating_texts.update()
             now = pygame.time.get_ticks()
             if now - self.fireworks_timer > 300:
                 self.fireworks_timer = now
@@ -870,12 +903,36 @@ class Game:
         self.draw_background()
         sw, sh = self.screen.get_width(), self.screen.get_height()
         
+        # --- SCREEN SHAKE OFFSET BERECHNUNG ---
+        offset_x = 0
+        offset_y = 0
+        now = pygame.time.get_ticks()
+        if self.shake_amount > 0 and now < self.shake_until_ticks:
+            offset_x = int(random.uniform(-self.shake_amount, self.shake_amount))
+            offset_y = int(random.uniform(-self.shake_amount, self.shake_amount))
+            self.shake_amount = max(0.0, self.shake_amount * 0.92)
+        else:
+            self.shake_amount = 0.0
+
         if self.state in (STATE_PLAYING, STATE_PAUSED):
-            self.all_sprites.draw(self.screen)
+            # 1. Ball Kometenschweif & Glow vor Sprites rendern
+            for ball in self.balls:
+                ball.draw_trail_and_glow(self.screen, offset_x, offset_y)
+
+            # 2. Sprites mit Offset rendern
+            if offset_x != 0 or offset_y != 0:
+                for sprite in self.all_sprites:
+                    self.screen.blit(sprite.image, (sprite.rect.x + offset_x, sprite.rect.y + offset_y))
+            else:
+                self.all_sprites.draw(self.screen)
+
+            # 3. Floating Text Popups rendern
+            for ft in self.floating_texts:
+                self.screen.blit(ft.image, (ft.rect.x + offset_x, ft.rect.y + offset_y))
             
             if "laser_paddle" in self.active_effects:
-                pygame.draw.rect(self.screen, RED, (self.paddle.rect.left + 4, self.paddle.rect.top - 6, 6, 8))
-                pygame.draw.rect(self.screen, RED, (self.paddle.rect.right - 10, self.paddle.rect.top - 6, 6, 8))
+                pygame.draw.rect(self.screen, RED, (self.paddle.rect.left + 4 + offset_x, self.paddle.rect.top - 6 + offset_y, 6, 8))
+                pygame.draw.rect(self.screen, RED, (self.paddle.rect.right - 10 + offset_x, self.paddle.rect.top - 6 + offset_y, 6, 8))
             
             font_hud = pygame.font.SysFont(None, 24)
             live_score = self.calculate_current_score()
@@ -898,7 +955,6 @@ class Game:
                     b_txt = font_hud.render(f"ENDGEGNER: {boss.health} / {boss.max_health} HP", True, WHITE)
                     self.screen.blit(b_txt, (sw // 2 - b_txt.get_width() // 2, bar_y - 2))
             
-            now = pygame.time.get_ticks()
             active_labels = []
             if self.paddle.is_stunned():
                 active_labels.append("STUNNED (Betäubt!)")
@@ -927,6 +983,8 @@ class Game:
             
         elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
             self.particles.draw(self.screen)
+            for ft in self.floating_texts:
+                self.screen.blit(ft.image, ft.rect.topleft)
             
             title_font = pygame.font.SysFont(None, 46, bold=True)
             if self.state == STATE_ALL_CLEARED:

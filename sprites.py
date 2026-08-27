@@ -16,6 +16,44 @@ BLOCK_HEALTH_COLORS: dict[int, tuple[int, int, int]] = {
     5: RED,
 }
 
+class FloatingText(pygame.sprite.Sprite):
+    """Aufsteigender, verblassender Text für Punkte und Treffer-Feedback"""
+    def __init__(self, x: float, y: float, text: str, color: tuple[int, int, int] = WHITE, font_size: int = 22, lifetime: int = 40, speed_y: float = -1.2, *groups: pygame.sprite.Group[Any]):
+        super().__init__(*groups)
+        self.x = x
+        self.y = y
+        self.text = text
+        self.color = color
+        self.font_size = font_size
+        self.lifetime = lifetime
+        self.current_life = lifetime
+        self.speed_y = speed_y
+        
+        self.font = pygame.font.SysFont(None, font_size, bold=True)
+        self.image: pygame.Surface = pygame.Surface((10, 10))
+        self.rect: pygame.Rect = self.image.get_rect(center=(int(self.x), int(self.y)))
+        self.update_image()
+
+    def update_image(self):
+        alpha = max(0, int(255 * (self.current_life / self.lifetime)))
+        text_surf = self.font.render(self.text, True, self.color)
+        shadow_surf = self.font.render(self.text, True, BLACK)
+        
+        self.image = pygame.Surface((text_surf.get_width() + 4, text_surf.get_height() + 4), pygame.SRCALPHA)
+        self.image.blit(shadow_surf, (3, 3))
+        self.image.blit(text_surf, (1, 1))
+        self.image.set_alpha(alpha)
+        self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
+
+    def update(self):
+        self.current_life -= 1
+        if self.current_life <= 0:
+            self.kill()
+            return
+        self.y += self.speed_y
+        self.update_image()
+
+
 class Particle(pygame.sprite.Sprite):
     def __init__(self, x: float, y: float, color: tuple[int, ...], speed_x: float | None = None, speed_y: float | None = None, lifetime: int = 30, size: int = 4):
         super().__init__()
@@ -348,6 +386,7 @@ class Ball(pygame.sprite.Sprite):
         
         self.speed_x = speed_x
         self.speed_y = speed_y
+        self.pos_history: list[tuple[float, float]] = []
 
     def set_size(self, new_radius: int):
         self.radius = new_radius
@@ -382,6 +421,7 @@ class Ball(pygame.sprite.Sprite):
 
     def update(self, time_factor: float = 1.0, screen_width: int = SCREEN_WIDTH, screen_height: int = SCREEN_HEIGHT):
         if self.attached:
+            self.pos_history.clear()
             return
             
         self.x += self.speed_x * time_factor
@@ -389,6 +429,11 @@ class Ball(pygame.sprite.Sprite):
         
         self.rect.x = int(self.x)
         self.rect.y = int(self.y)
+
+        # Positionshistorie für Kometenschweif
+        self.pos_history.append((self.rect.centerx, self.rect.centery))
+        if len(self.pos_history) > 8:
+            self.pos_history.pop(0)
 
         if self.rect.left <= 0:
             self.rect.left = 0
@@ -403,6 +448,34 @@ class Ball(pygame.sprite.Sprite):
             self.rect.top = 0
             self.y = float(self.rect.y)
             self.speed_y *= -1
+
+    def draw_trail_and_glow(self, surface: pygame.Surface, offset_x: int = 0, offset_y: int = 0):
+        if not self.alive() or self.attached:
+            return
+            
+        if self.is_fireball:
+            base_color = (255, 140, 0)
+        elif self.is_piercing:
+            base_color = (255, 50, 50)
+        else:
+            base_color = (195, 56, 255)
+
+        # 1. Kometenschweif
+        num_pts = len(self.pos_history)
+        for idx, (px, py) in enumerate(self.pos_history[:-1]):
+            alpha = int(210 * (idx + 1) / max(1, num_pts))
+            r_scale = max(2, int(self.radius * (idx + 1) / max(1, num_pts)))
+            
+            trail_surf = pygame.Surface((r_scale * 2, r_scale * 2), pygame.SRCALPHA)
+            pygame.draw.circle(trail_surf, (*base_color, alpha), (r_scale, r_scale), r_scale)
+            surface.blit(trail_surf, (int(px) + offset_x - r_scale, int(py) + offset_y - r_scale))
+
+        # 2. Pulsierender Glow-Ring
+        glow_radius = self.radius + 5
+        glow_surf = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*base_color, 75), (glow_radius, glow_radius), glow_radius)
+        pygame.draw.circle(glow_surf, (255, 255, 255, 130), (glow_radius, glow_radius), self.radius + 1, 2)
+        surface.blit(glow_surf, (self.rect.centerx + offset_x - glow_radius, self.rect.centery + offset_y - glow_radius))
 
 
 class LaserProjectile(pygame.sprite.Sprite):
