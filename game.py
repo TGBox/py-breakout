@@ -6,7 +6,7 @@ import json
 import random
 from settings import *
 from level_manager import LevelManager
-from sprites import Paddle, Ball, PowerUp
+from sprites import Paddle, Ball, PowerUp, LaserProjectile, SafetyNet, Block
 from menu import LevelSelectionMenu, MainMenu
 from editor import LevelEditor
 
@@ -72,6 +72,8 @@ class Game:
         self.blocks: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.powerups: pygame.sprite.Group[Any] = pygame.sprite.Group()
         self.balls: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.lasers: pygame.sprite.Group[Any] = pygame.sprite.Group()
+        self.safety_net: SafetyNet | None = None
         
         self.paddle: Paddle = Paddle()
         self.time_factor: float = 1.0 
@@ -128,6 +130,11 @@ class Game:
         self.blocks.empty()
         self.powerups.empty()
         self.balls.empty()
+        self.lasers.empty()
+        if self.safety_net:
+            self.safety_net.kill()
+            self.safety_net = None
+
         self.active_effects.clear()
         self.time_factor = 1.0
         
@@ -169,14 +176,13 @@ class Game:
 
     # Positive Effekte (echte "Power-Ups") vs. negative Effekte ("Power-Downs").
     POSITIVE_EFFECTS = ["sticky_paddle", "expand_paddle", "slow_time",
-                        "bigger_ball", "multiball", "piercing_shot"]
+                        "bigger_ball", "multiball", "piercing_shot",
+                        "laser_paddle", "safety_net", "fireball"]
     NEGATIVE_EFFECTS = ["shrink_paddle", "speed_time", "smaller_ball"]
 
     def spawn_powerup(self, x: int, y: int, guaranteed: bool = False):
         spawn_chance: float = 1.0 if guaranteed else 0.15
         if random.random() < spawn_chance:
-            # Garantierte Drops (grüne PowerUp-Blöcke) dürfen NUR positive Effekte auswerfen.
-            # Normale Blöcke droppen weiterhin zufällig aus positiven und negativen Effekten.
             effects = self.POSITIVE_EFFECTS if guaranteed else (self.POSITIVE_EFFECTS + self.NEGATIVE_EFFECTS)
             chosen_effect = random.choice(effects)
             p_up: PowerUp = PowerUp(x, y, chosen_effect)
@@ -228,8 +234,21 @@ class Game:
                 new_ball = Ball(b.rect.centerx, b.rect.centery, b.speed_x * -1, b.speed_y)
                 if "ball_size" in self.active_effects: new_ball.set_size(b.radius)
                 if "piercing" in self.active_effects: new_ball.set_piercing(True)
+                if "fireball" in self.active_effects: new_ball.set_fireball(True)
                 self.balls.add(new_ball)
                 self.all_sprites.add(new_ball)
+        elif powerup.effect_type == "laser_paddle":
+            self.active_effects["laser_paddle"] = now + duration
+        elif powerup.effect_type == "safety_net":
+            if self.safety_net:
+                self.safety_net.kill()
+            self.safety_net = SafetyNet()
+            self.all_sprites.add(self.safety_net)
+            self.active_effects["safety_net"] = now + duration
+        elif powerup.effect_type == "fireball":
+            for ball in self.balls:
+                ball.set_fireball(True)
+            self.active_effects["fireball"] = now + duration
 
     def check_timers(self):
         now = pygame.time.get_ticks()
@@ -268,6 +287,17 @@ class Game:
         if "piercing" in self.active_effects and now > self.active_effects["piercing"]:
             for ball in self.balls: ball.set_piercing(False)
             del self.active_effects["piercing"]
+        if "laser_paddle" in self.active_effects and now > self.active_effects["laser_paddle"]:
+            del self.active_effects["laser_paddle"]
+        if "safety_net" in self.active_effects and now > self.active_effects["safety_net"]:
+            if self.safety_net:
+                self.safety_net.kill()
+                self.safety_net = None
+            del self.active_effects["safety_net"]
+        if "fireball" in self.active_effects and now > self.active_effects["fireball"]:
+            for ball in self.balls:
+                ball.set_fireball(False)
+            del self.active_effects["fireball"]
 
     def calculate_score(self, elapsed_seconds: float):
         """Berechnet den Score anhand einer übergebenen Zeit."""
@@ -319,6 +349,72 @@ class Game:
             # ==========================================
             # ZUSTAND: LEVELAUSWAHL (STATE_LEVEL_SELECT)
             # ==========================================
+    def trigger_explosion(self, origin_block: Block):
+        center_x = origin_block.rect.centerx
+        center_y = origin_block.rect.centery
+        radius_x = BLOCK_WIDTH * 1.6
+        radius_y = BLOCK_HEIGHT * 1.6
+
+        surrounding = [
+            b for b in list(self.blocks)
+            if b != origin_block and abs(b.rect.centerx - center_x) <= radius_x and abs(b.rect.centery - center_y) <= radius_y
+        ]
+        
+        for b in surrounding:
+            destroyed = b.hit(force_destroy=True)
+            if destroyed:
+                if b.block_type == 'B':
+                    self.trigger_explosion(b)
+                else:
+                    self.spawn_powerup(b.rect.x, b.rect.y, guaranteed=(b.block_type == 'P'))
+                b.kill()
+
+    def handle_portal_teleport(self, ball: Ball, portal_block: Block):
+        now = pygame.time.get_ticks()
+        if now - ball.last_teleport_ticks < 600:
+            return
+        
+        portals = [b for b in self.blocks if b.block_type == 'T' and b != portal_block]
+        if portals:
+            dest_portal = random.choice(portals)
+            ball.rect.centerx = dest_portal.rect.centerx
+            ball.rect.centery = dest_portal.rect.centery + (35 if ball.speed_y > 0 else -35)
+            ball.x = float(ball.rect.x)
+            ball.y = float(ball.rect.y)
+            ball.last_teleport_ticks = now
+
+    def events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            
+            if self.state == STATE_MENU:
+                action = self.menu.handle_event(event)
+                
+                if action == "PLAY":
+                    self.current_level_num = self.unlocked_level
+                    self.state = STATE_PLAYING
+                    self.start_game()
+                    
+                elif action == "LEVEL_SELECT":
+                    self.state = STATE_LEVEL_SELECT
+                    
+                elif action == "EDITOR":
+                    self.state = STATE_EDITOR
+                    print("[System] Editor wird geöffnet...")
+                    
+                elif action == "RESET":
+                    self.unlocked_level = 1
+                    self.current_level_num = 1
+                    self.save_game()
+                    print("[Spielstand] Fortschritt zurückgesetzt!")
+                    
+                elif action == "QUIT":
+                    self.running = False
+                
+                elif action == "HIGHSCORE":
+                    self.state = STATE_HIGHSCORE
+
             elif self.state == STATE_LEVEL_SELECT:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     chosen_level = self.level_selection_menu.handle_click(pygame.mouse.get_pos())
@@ -358,7 +454,8 @@ class Game:
 
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE:
+                    if event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_w):
+                        # Angeheftete Bälle starten
                         for ball in self.balls:
                             if ball.attached:
                                 ball.attached = False
@@ -371,6 +468,13 @@ class Game:
                                 
                                 ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
                                 ball.speed_y = -math.sqrt(BALL_TEMPO**2 - ball.speed_x**2)
+                        
+                        # Laser abfeuern, falls Laser-Paddle aktiv ist
+                        if "laser_paddle" in self.active_effects:
+                            l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
+                            l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
+                            self.lasers.add(l1, l2)
+                            self.all_sprites.add(l1, l2)
                     
                     elif event.key == pygame.K_p:
                         self.state = STATE_PAUSED
@@ -437,10 +541,26 @@ class Game:
             self.paddle.update()
             self.powerups.update()
             self.blocks.update()
+            self.lasers.update()
             self.balls.update(self.time_factor)
+
+            # --- LASER-KOLLISIONEN ---
+            for laser in list(self.lasers):
+                hit_blocks = pygame.sprite.spritecollide(laser, self.blocks, False)
+                if hit_blocks:
+                    laser.kill()
+                    for block in hit_blocks:
+                        destroyed = block.hit(force_destroy=True)
+                        if destroyed:
+                            if block.block_type == 'B':
+                                self.trigger_explosion(block)
+                            else:
+                                self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
+                            block.kill()
             
+            # --- BALL-KOLLISIONEN ---
             for ball in list(self.balls):
-                # --- PADDLE-KOLLISION ---
+                # Paddle-Kollision
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
                     self.paddle_hits_count += 1
                     if self.paddle_sticky:
@@ -459,22 +579,41 @@ class Game:
                         ball.speed_x = relative_hit * (BALL_SPEED * 0.8)
                         ball.speed_y = -math.sqrt(BALL_SPEED**2 - ball.speed_x**2)
 
-                # --- BLOCK-KOLLISION ---
+                # Block-Kollision
                 hit_blocks = pygame.sprite.spritecollide(ball, self.blocks, False)
                 if hit_blocks:
-                    if not ball.is_piercing:
-                        ball.speed_y *= -1
-                        
                     for block in hit_blocks:
-                        destroyed = block.hit()
-                        
-                        if destroyed:
-                            self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
-                            block.kill()
+                        if block.block_type == 'T':
+                            self.handle_portal_teleport(ball, block)
+                            if not ball.is_fireball and not ball.is_piercing:
+                                ball.speed_y *= -1
+                        else:
+                            force = ball.is_fireball or ball.is_piercing
+                            if not ball.is_piercing and not ball.is_fireball and not block.is_unbreakable:
+                                ball.speed_y *= -1
+                            elif block.is_unbreakable and not force:
+                                ball.speed_y *= -1
 
-                # --- AUS-DEM-SPIEL-PRÜFUNG ---
-                if ball.rect.top > SCREEN_HEIGHT:
-                    ball.kill()
+                            destroyed = block.hit(force_destroy=force)
+                            if destroyed:
+                                if block.block_type == 'B':
+                                    self.trigger_explosion(block)
+                                else:
+                                    self.spawn_powerup(block.rect.x, block.rect.y, guaranteed=(block.block_type == 'P'))
+                                block.kill()
+
+                # Aus-dem-Spiel- & Schutznetz-Prüfung
+                if ball.rect.bottom >= SCREEN_HEIGHT - 15:
+                    if self.safety_net and self.safety_net.alive():
+                        ball.rect.bottom = self.safety_net.rect.top
+                        ball.y = float(ball.rect.y)
+                        ball.speed_y = -abs(ball.speed_y)
+                        self.safety_net.kill()
+                        self.safety_net = None
+                        if "safety_net" in self.active_effects:
+                            del self.active_effects["safety_net"]
+                    elif ball.rect.top > SCREEN_HEIGHT:
+                        ball.kill()
 
             collected_powerups = pygame.sprite.spritecollide(cast(Any, self.paddle), self.powerups, True)
             for p_up in collected_powerups:
@@ -485,7 +624,8 @@ class Game:
                 pygame.display.set_caption(TITLE)
 
             # --- LEVEL GESCHAFFT ---
-            if len(self.blocks) == 0:
+            breakable_blocks = [b for b in self.blocks if not b.is_unbreakable]
+            if len(breakable_blocks) == 0:
                 elapsed_ms = pygame.time.get_ticks() - self.level_start_ticks
                 self.elapsed_seconds_at_win = elapsed_ms / 1000.0
                 self.final_score = self.calculate_score(self.elapsed_seconds_at_win)
@@ -512,6 +652,11 @@ class Game:
         
         if self.state == STATE_PLAYING or self.state == STATE_PAUSED:
             self.all_sprites.draw(self.screen)
+            
+            # Laserkanonen auf dem Paddle zeichnen
+            if "laser_paddle" in self.active_effects:
+                pygame.draw.rect(self.screen, RED, (self.paddle.rect.left + 4, self.paddle.rect.top - 6, 6, 8))
+                pygame.draw.rect(self.screen, RED, (self.paddle.rect.right - 10, self.paddle.rect.top - 6, 6, 8))
             
             font_hud = pygame.font.SysFont(None, 24)
             live_score = self.calculate_current_score()
