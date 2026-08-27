@@ -66,41 +66,64 @@ class Particle(pygame.sprite.Sprite):
 
 
 class PowerUp(pygame.sprite.Sprite):
-    COLOR_MAP: dict[str, tuple[int, int, int]] = {
-        "sticky_paddle": YELLOW,
-        "expand_paddle": GREEN,
-        "shrink_paddle": RED,
-        "slow_time": CYAN,
-        "speed_time": PURPLE,
-        "bigger_ball": ORANGE_YELLOW,
-        "smaller_ball": (150, 150, 255),
-        "multiball": MAGENTA,
-        "piercing_shot": (255, 50, 50),
-        "laser_paddle": REDDISH_ORANGE,
-        "missile_paddle": (255, 140, 0),
-        "shield_aura": (0, 220, 255),
-        "safety_net": (0, 255, 200),
-        "secure_border": CYAN,
-        "magnet": (255, 215, 0),
-        "score_boost": GREEN,
-        "score_drain": DARK_PURPLE,
-        "fireball": (255, 100, 0),
-        "inverted_controls": (180, 0, 180)
-    }
-
     def __init__(self, x: int, y: int, effect_type: str, *groups: pygame.sprite.Group[Any]):
         super().__init__(*groups)
         self.effect_type = effect_type
-        self.width = 16
-        self.height = 16
+        self.size = 28
         
-        self.image = pygame.Surface((self.width, self.height))
-        color = self.COLOR_MAP.get(self.effect_type, WHITE)
-        self.image.fill(color)
-        pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 2)
+        self.config: dict[str, dict[str, Any]] = {
+            # --- POSITIVE EFFEKTE (Kreise / Kugeln) ---
+            "slow_time":        {"color": (50, 150, 255), "char": "S", "shape": "circle"},
+            "bigger_ball":      {"color": (150, 50, 200), "char": "B", "shape": "circle"},
+            "multiball":        {"color": (50, 230, 50),  "char": "M", "shape": "circle"},
+            "expand_paddle":    {"color": (50, 200, 200), "char": "W", "shape": "circle"},
+            "piercing_shot":    {"color": (255, 215, 0),  "char": "P", "shape": "circle"},
+            "sticky_paddle":    {"color": (230, 50, 230), "char": "K", "shape": "circle"},
+            "laser_paddle":     {"color": (255, 50, 50),   "char": "L", "shape": "circle"},
+            "missile_paddle":   {"color": (255, 140, 0),  "char": "R", "shape": "circle"},
+            "shield_aura":      {"color": (0, 220, 255),  "char": "A", "shape": "circle"},
+            "safety_net":       {"color": (0, 220, 255),  "char": "N", "shape": "circle"},
+            "secure_border":    {"color": (0, 255, 255),   "char": "N", "shape": "circle"},
+            "fireball":         {"color": (255, 140, 0),  "char": "F", "shape": "circle"},
+            "magnet":           {"color": (255, 100, 255), "char": "U", "shape": "circle"},
+            "score_boost":      {"color": (255, 255, 100), "char": "+", "shape": "circle"},
+            
+            # --- NEGATIVE EFFEKTE (Dreiecke) ---
+            "shrink_paddle":    {"color": (255, 50, 50),  "char": "C", "shape": "triangle"},
+            "speed_time":       {"color": (255, 100, 0),  "char": "F", "shape": "triangle"},
+            "smaller_ball":     {"color": (255, 150, 0),  "char": "s", "shape": "triangle"},
+            "score_drain":      {"color": (200, 0, 0),    "char": "-", "shape": "triangle"},
+            "inverted_controls":{"color": (180, 0, 180),  "char": "I", "shape": "triangle"},
+        }
+        
+        cfg = self.config.get(self.effect_type, {"color": (130, 130, 130), "char": "?", "shape": "circle"})
+        
+        self.image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        radius = self.size // 2
+        
+        font = pygame.font.SysFont(None, 20, bold=True)
+        text_color = BLACK if sum(cfg["color"]) > 380 else WHITE
+        text_surf = font.render(cfg["char"], True, text_color)
+        
+        if cfg["shape"] == "circle":
+            pygame.draw.circle(self.image, cfg["color"], (radius, radius), radius)
+            pygame.draw.circle(self.image, WHITE, (radius, radius), radius, 2)
+            text_rect = text_surf.get_rect(center=(radius, radius))
+            
+        elif cfg["shape"] == "triangle":
+            points = [(2, 2), (self.size - 2, 2), (radius, self.size - 2)]
+            pygame.draw.polygon(self.image, cfg["color"], points)
+            pygame.draw.polygon(self.image, WHITE, points, 2)
+            text_rect = text_surf.get_rect(center=(radius, radius - 3))
+            
+        else:
+            pygame.draw.rect(self.image, cfg["color"], (0, 0, self.size, self.size))
+            pygame.draw.rect(self.image, WHITE, (0, 0, self.size, self.size), 2)
+            text_rect = text_surf.get_rect(center=(radius, radius))
 
+        self.image.blit(text_surf, text_rect)
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
-        self.speed_y = 2.5
+        self.speed_y = 2.8
 
     def update(self, screen_height: int = SCREEN_HEIGHT, *args: Any, **kwargs: Any):
         self.rect.y += int(self.speed_y)
@@ -153,46 +176,51 @@ class Block(pygame.sprite.Sprite):
         self._update_appearance()
 
     def _update_appearance(self):
+        self.image = pygame.Surface((self.width, self.height))
+        font_size = max(10, min(18, int(self.height * 0.55)))
+        font = pygame.font.SysFont(None, font_size, bold=True)
+
         if self.block_type == "B":
-            color = (220, 40, 40)
+            self.image.fill((220, 40, 40))
+            pygame.draw.rect(self.image, YELLOW, (0, 0, self.width, self.height), 2)
+            txt = font.render("BOMB", True, YELLOW)
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         elif self.block_type == "X":
-            color = (100, 100, 115)
+            self.image.fill((100, 100, 115))
+            pygame.draw.rect(self.image, (210, 210, 230), (0, 0, self.width, self.height), 2)
+            txt = font.render("STAHL", True, (220, 220, 220))
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         elif self.block_type == "T":
-            color = (140, 30, 210)
+            self.image.fill((140, 30, 210))
+            pygame.draw.rect(self.image, CYAN, (0, 0, self.width, self.height), 2)
+            txt = font.render("PORTAL", True, CYAN)
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         elif self.block_type == "M":
-            color = (255, 170, 0)
+            self.image.fill((255, 170, 0))
+            pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 2)
+            txt = font.render("MOVE", True, BLACK)
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         elif self.is_powerup or self.block_type == "P":
-            color = GREEN
-        elif self.is_powerdown:
-            color = DARK_PURPLE
+            self.image.fill((40, 180, 80))
+            pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 2)
+            txt = font.render("P", True, WHITE)
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
+        elif self.is_powerdown or self.block_type == "D":
+            self.image.fill(DARK_PURPLE)
+            pygame.draw.rect(self.image, MAGENTA, (0, 0, self.width, self.height), 2)
+            txt = font.render("D", True, MAGENTA)
+            self.image.blit(txt, txt.get_rect(center=(self.width // 2, self.height // 2)))
         else:
             if self.health >= 5: color = RED
             elif self.health == 4: color = REDDISH_ORANGE
             elif self.health == 3: color = ORANGE
             elif self.health == 2: color = ORANGE_YELLOW
-            else: color = YELLOW
+            else: color = GREEN
             
-        self.image.fill(color)
-        
-        if self.is_unbreakable:
-            pygame.draw.rect(self.image, (220, 220, 240), (0, 0, self.width, self.height), 3)
-            pygame.draw.line(self.image, (220, 220, 240), (0, 0), (self.width, self.height), 2)
-            pygame.draw.line(self.image, (220, 220, 240), (0, self.height), (self.width, 0), 2)
-        elif self.block_type == "B":
-            pygame.draw.rect(self.image, YELLOW, (0, 0, self.width, self.height), 2)
-            pygame.draw.circle(self.image, BLACK, (self.width // 2, self.height // 2), min(self.width, self.height) // 4)
-        elif self.block_type == "T":
-            pygame.draw.rect(self.image, CYAN, (0, 0, self.width, self.height), 2)
-            pygame.draw.ellipse(self.image, WHITE, (self.width // 4, self.height // 4, self.width // 2, self.height // 2))
-        elif self.is_powerup or self.block_type == "P":
-            pygame.draw.rect(self.image, WHITE, (0, 0, self.width, self.height), 2)
-            pygame.draw.line(self.image, WHITE, (self.width // 2, 3), (self.width // 2, self.height - 3), 2)
-            pygame.draw.line(self.image, WHITE, (3, self.height // 2), (self.width - 3, self.height // 2), 2)
-        elif self.is_powerdown:
-            pygame.draw.rect(self.image, MAGENTA, (0, 0, self.width, self.height), 2)
-            pygame.draw.line(self.image, MAGENTA, (3, self.height // 2), (self.width - 3, self.height // 2), 2)
-        else:
+            self.image.fill(color)
             pygame.draw.rect(self.image, BLACK, (0, 0, self.width, self.height), 1)
+            pygame.draw.line(self.image, (255, 255, 255, 140), (1, 1), (self.width - 2, 1))
+            pygame.draw.line(self.image, (255, 255, 255, 140), (1, 1), (1, self.height - 2))
 
     def update(self, *args: Any, **kwargs: Any):
         if self.is_moving:
@@ -421,12 +449,10 @@ class Paddle(pygame.sprite.Sprite):
         self.last_shot_ticks = -1000
 
     def draw_ammo_and_shield(self, screen: pygame.Surface):
-        # Schutzschild-Aura zeichnen
         if self.shield_active:
             s_rect = self.rect.inflate(16, 12)
             pygame.draw.rect(screen, CYAN, s_rect, width=3, border_radius=10)
             
-        # Munitionsanzeige über dem Paddle
         font = pygame.font.SysFont(None, 18, bold=True)
         if self.laser_ammo > 0:
             txt = font.render(f"LASER: {self.laser_ammo}", True, RED)
@@ -467,7 +493,6 @@ class Paddle(pygame.sprite.Sprite):
         if self.rect.right > screen_width: 
             self.rect.right = screen_width
 
-        # Visuelles Feedback bei Betäubung
         if self.is_stunned() and (pygame.time.get_ticks() // 100) % 2 == 0:
             pygame.draw.rect(self.image, (255, 230, 0), (0, 0, self.rect.width, self.rect.height), 2)
 

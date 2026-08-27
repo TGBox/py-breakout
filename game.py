@@ -1320,14 +1320,38 @@ class Game:
             self.editor.update()
 
     def draw_background(self):
-        self.screen.fill(BLACK)
+        self.screen.fill((10, 10, 24))
         sw, sh = self.screen.get_width(), self.screen.get_height()
+        
+        # 1. Sternenfeld (Parallax Space Drift)
         for star in self.bg_stars:
             star[1] += star[2]
             if star[1] > sh:
                 star[1] = 0
                 star[0] = random.randint(0, sw)
-            pygame.draw.circle(self.screen, (100, 120, 150), (int(star[0]), int(star[1])), max(1, int(star[2])))
+            col = (140, 180, 255) if star[2] > 0.8 else (80, 100, 150)
+            pygame.draw.circle(self.screen, col, (int(star[0]), int(star[1])), max(1, int(star[2])))
+
+        # 2. Cyberpunk Neon Grid Animation am unteren Bildschirmrand
+        now = pygame.time.get_ticks()
+        grid_y_offset = (now // 25) % 35
+        horizon_y = int(sh * 0.65)
+        
+        # Horizontale Neonlinie
+        pygame.draw.line(self.screen, (0, 180, 255), (0, horizon_y), (sw, horizon_y), 2)
+        
+        # Bewegliche horizontale Gitterlinien
+        for y_pos in range(horizon_y, sh + 35, 25):
+            y_curr = y_pos + grid_y_offset
+            if horizon_y <= y_curr <= sh:
+                alpha_factor = (y_curr - horizon_y) / max(1, sh - horizon_y)
+                line_color = (0, int(150 * alpha_factor), int(220 * alpha_factor))
+                pygame.draw.line(self.screen, line_color, (0, y_curr), (sw, y_curr), 1)
+
+        # Fluchtpunkt-Vertikallinien
+        vanish_x = sw // 2
+        for x_step in range(-sw, sw * 2, 80):
+            pygame.draw.line(self.screen, (0, 60, 110), (vanish_x, horizon_y), (x_step, sh), 1)
 
     def draw(self):
         self.draw_background()
