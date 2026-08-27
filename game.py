@@ -7,8 +7,9 @@ from typing import Any, cast
 from settings import *
 from level_manager import LevelManager
 from sprites import Paddle, Ball, PowerUp, Block, Particle, SecureBorder, SafetyNet, LaserProjectile, Boss, BossProjectile, FloatingText
-from menu import LevelSelectionMenu, MainMenu
+from menu import LevelSelectionMenu, MainMenu, SettingsMenu
 from editor import LevelEditor
+from sound_manager import SoundManager
 
 def get_level_name(lvl_nr: int) -> str:
     if lvl_nr <= 9:
@@ -26,6 +27,16 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
         self.state = STATE_MENU
+        self.previous_state = STATE_MENU
+        
+        # Controller / Gamepad Unterstüzung
+        if not pygame.joystick.get_init():
+            pygame.joystick.init()
+        self.joysticks: list[Any] = []
+        self.init_joysticks()
+
+        # Audio Manager
+        self.sound_manager = SoundManager()
         
         # Level-Verwaltung
         self.level_manager = LevelManager()
@@ -38,7 +49,7 @@ class Game:
         self.load_game_data()
         self.highscore_view_level = 1
         
-        # Highscore-Rechtecke für Klicks definieren
+        # Highscore-Rechtecke & Pause-Buttons für Klicks definieren
         self.update_highscore_rects()
         
         # Scoring-Metriken & Zeitmessung
@@ -58,10 +69,11 @@ class Game:
         self.shake_amount: float = 0.0
         self.shake_until_ticks: int = 0
         
-        # Menü & Editor
+        # Menü, Settings & Editor
         self.menu = MainMenu()
         self.menu.set_difficulty_label(self.difficulty)
         self.level_selection_menu = LevelSelectionMenu(self.screen)
+        self.settings_menu = SettingsMenu(self.screen)
         self.editor = LevelEditor(self.screen)
         
         # Sprite-Gruppen
@@ -89,6 +101,19 @@ class Game:
         ]
         self.fireworks_timer = 0
 
+    def init_joysticks(self):
+        """Erkennt und initialisiert angeschlossene Gamepads / Controller."""
+        self.joysticks.clear()
+        if pygame.joystick.get_init():
+            for i in range(pygame.joystick.get_count()):
+                try:
+                    js = pygame.joystick.Joystick(i)
+                    js.init()
+                    self.joysticks.append(js)
+                    print(f"[Controller] Gamepad erkannt: {js.get_name()}")
+                except Exception as e:
+                    print(f"[Controller] Fehler beim Initialisieren: {e}")
+
     def add_screen_shake(self, intensity: float, duration_ms: int = 250):
         self.shake_amount = max(self.shake_amount, intensity)
         self.shake_until_ticks = pygame.time.get_ticks() + duration_ms
@@ -98,7 +123,7 @@ class Game:
         self.floating_texts.add(ft)
 
     def load_game_data(self):
-        """Lädt alle Spieldaten aus game_data.json mit Abwärtskompatibilität."""
+        """Lädt Spieldaten und Audio-Einstellungen aus game_data.json."""
         if os.path.exists("game_data.json"):
             try:
                 with open("game_data.json", "r") as file:
@@ -106,35 +131,28 @@ class Game:
                     self.unlocked_level = data.get("unlocked_level", 1)
                     self.difficulty = data.get("difficulty", DIFFICULTY_NORMAL)
                     self.highscores = data.get("highscores", {})
+                    
+                    self.sound_manager.muted = data.get("sound_muted", False)
+                    self.sound_manager.sfx_volume = data.get("sfx_volume", 0.8)
+                    self.sound_manager.music_volume = data.get("music_volume", 0.5)
+                    self.sound_manager.update_volumes()
+
                 print(f"[Load] game_data.json geladen. Fortschritt: Level {self.unlocked_level}")
                 return
             except Exception as e:
                 print(f"[Load-Fehler] game_data.json beschädigt: {e}")
 
-        # Fallback & Migration von alten JSON-Dateien
-        if os.path.exists("save_progress.json"):
-            try:
-                with open("save_progress.json", "r") as file:
-                    save_data = json.load(file)
-                    self.unlocked_level = save_data.get("unlocked_level", 1)
-            except Exception as e:
-                print(f"[Load] Fehler in save_progress.json: {e}")
-
-        if os.path.exists("highscores.json"):
-            try:
-                with open("highscores.json", "r") as file:
-                    self.highscores = json.load(file)
-            except Exception as e:
-                print(f"[Load] Fehler in highscores.json: {e}")
-
         self.save_game_data()
 
     def save_game_data(self):
-        """Speichert Fortschritt, Highscores und Einstellungen in game_data.json."""
+        """Speichert Fortschritt, Highscores und Audio-Einstellungen in game_data.json."""
         data = {
             "unlocked_level": self.unlocked_level,
             "difficulty": self.difficulty,
-            "highscores": self.highscores
+            "highscores": self.highscores,
+            "sound_muted": self.sound_manager.muted,
+            "sfx_volume": self.sound_manager.sfx_volume,
+            "music_volume": self.sound_manager.music_volume
         }
         try:
             with open("game_data.json", "w") as file:
@@ -204,6 +222,9 @@ class Game:
         
         self.all_sprites.add(self.paddle, self.balls, self.blocks)
         self.state = STATE_PLAYING
+        
+        # Retro Chiptune BGM starten
+        self.sound_manager.play_bgm()
 
     def reset_paddle(self):
         sw, sh = self.screen.get_width(), self.screen.get_height()
@@ -243,7 +264,12 @@ class Game:
         duration = int(8000 * float(diff_cfg["timer_mult"]))
         etype = powerup.effect_type
         
-        self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, etype.replace('_', ' ').upper(), GREEN, font_size=24)
+        is_positive = etype in self.POSITIVE_EFFECTS
+        sound_name = "powerup" if is_positive else "powerdown"
+        self.sound_manager.play_sound(sound_name)
+
+        color = GREEN if is_positive else RED
+        self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, etype.replace('_', ' ').upper(), color, font_size=24)
 
         if etype == "sticky_paddle":
             self.paddle_sticky = True
@@ -255,15 +281,15 @@ class Game:
             
         elif etype == "expand_paddle":
             self.paddle.image = pygame.Surface((150, 15))
-            color = YELLOW if self.paddle_sticky else GREEN
-            self.paddle.image.fill(color)
+            color_pad = YELLOW if self.paddle_sticky else GREEN
+            self.paddle.image.fill(color_pad)
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
             self.active_effects["paddle_size"] = now + duration
             
         elif etype == "shrink_paddle":
             self.paddle.image = pygame.Surface((60, 15))
-            color = YELLOW if self.paddle_sticky else RED
-            self.paddle.image.fill(color)
+            color_pad = YELLOW if self.paddle_sticky else RED
+            self.paddle.image.fill(color_pad)
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
             self.active_effects["paddle_size"] = now + duration
             
@@ -403,6 +429,7 @@ class Game:
         self.spawn_particles(center_x, center_y, RED, count=15)
         self.add_screen_shake(6.0, 300)
         self.spawn_floating_text(center_x, center_y, "BOOM!", RED, font_size=26)
+        self.sound_manager.play_sound("explosion")
         
         radius_x = origin_block.width * 1.6
         radius_y = origin_block.height * 1.6
@@ -439,6 +466,31 @@ class Game:
             ball.x = float(ball.rect.x)
             ball.y = float(ball.rect.y)
             ball.last_teleport_ticks = now
+            self.sound_manager.play_sound("laser")
+
+    def launch_ball_or_laser(self):
+        """Startet klebende Bälle oder feuert Laser-Kanonen."""
+        for ball in self.balls:
+            if ball.attached:
+                ball.attached = False
+                hit_pos = getattr(ball, "sticky_offset_x", 0)
+                relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                
+                speed_mult = float(DIFFICULTY_SETTINGS[self.difficulty]["ball_speed_mult"])
+                BALL_TEMPO = BALL_SPEED * speed_mult
+                if abs(relative_hit) < 0.1:
+                    relative_hit = random.choice([-0.15, 0.15])
+                
+                ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
+                ball.speed_y = -math.sqrt(max(1.0, BALL_TEMPO**2 - ball.speed_x**2))
+                self.sound_manager.play_sound("paddle_hit")
+
+        if "laser_paddle" in self.active_effects:
+            l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
+            l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
+            self.lasers.add(l1, l2)
+            self.all_sprites.add(l1, l2)
+            self.sound_manager.play_sound("laser")
 
     def calculate_score(self, elapsed_seconds: float | None = None) -> int:
         base_score = 10000
@@ -465,6 +517,7 @@ class Game:
         sw, sh = self.screen.get_width(), self.screen.get_height()
         self.editor.screen = self.screen
         self.level_selection_menu.screen = self.screen
+        self.settings_menu.screen = self.screen
         self.update_highscore_rects()
         
         self.bg_stars = [
@@ -501,18 +554,59 @@ class Game:
         self.hs_next_rect = pygame.Rect(sw // 2 + 100, 110, 40, 35)
         self.hs_delete_rect = pygame.Rect(sw // 2 - 210, sh - 80, 200, 45)
         self.hs_back_rect = pygame.Rect(sw // 2 + 10, sh - 80, 200, 45)
+        
+        # Pause-Buttons
+        self.pause_resume_rect = pygame.Rect(sw // 2 - 180, sh // 2 + 15, 110, 40)
+        self.pause_opts_rect = pygame.Rect(sw // 2 - 55, sh // 2 + 15, 110, 40)
+        self.pause_menu_rect = pygame.Rect(sw // 2 + 70, sh // 2 + 15, 110, 40)
 
     def events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             
+            if event.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
+                self.init_joysticks()
+
             if event.type == pygame.VIDEORESIZE:
                 if not self.is_fullscreen:
                     self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
                 self.on_resize()
 
+            # --- CONTROLLER BUTTON EVENTS ---
+            if event.type == pygame.JOYBUTTONDOWN:
+                if event.button == 0:  # Button A / Cross: Ball starten / Laser / Bestätigen
+                    if self.state == STATE_PLAYING:
+                        self.launch_ball_or_laser()
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_PLAYING
+                        self.sound_manager.play_bgm()
+                elif event.button in (6, 7):  # Button Start / Options: Pause
+                    if self.state == STATE_PLAYING:
+                        self.state = STATE_PAUSED
+                        self.sound_manager.stop_bgm()
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_PLAYING
+                        self.sound_manager.play_bgm()
+                elif event.button in (2, 4, 5):  # Button LB/RB/X: Mute
+                    muted = self.sound_manager.toggle_mute()
+                    status_text = "MUTED" if muted else "AUDIO ON"
+                    self.spawn_floating_text(self.screen.get_width() // 2, 50, f"AUDIO: {status_text}", YELLOW, font_size=26)
+                    self.save_game_data()
+                elif event.button == 1:  # Button B / Circle: Zurück
+                    if self.state == STATE_SETTINGS:
+                        self.save_game_data()
+                        self.state = self.previous_state
+                    elif self.state == STATE_PAUSED:
+                        self.state = STATE_MENU
+
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_m:
+                    muted = self.sound_manager.toggle_mute()
+                    status_text = "MUTED" if muted else "AUDIO ON"
+                    self.spawn_floating_text(self.screen.get_width() // 2, 50, f"AUDIO: {status_text}", YELLOW, font_size=26)
+                    self.save_game_data()
+
                 if event.key == pygame.K_F11 or (event.key == pygame.K_RETURN and (event.mod & pygame.KMOD_ALT)):
                     self.toggle_fullscreen()
                     continue
@@ -526,6 +620,10 @@ class Game:
                     
                 elif action == "LEVEL_SELECT":
                     self.state = STATE_LEVEL_SELECT
+                    
+                elif action == "SETTINGS":
+                    self.previous_state = STATE_MENU
+                    self.state = STATE_SETTINGS
                     
                 elif action == "DIFFICULTY":
                     if self.difficulty == DIFFICULTY_EASY:
@@ -554,6 +652,17 @@ class Game:
                 
                 elif action == "HIGHSCORE":
                     self.state = STATE_HIGHSCORE
+
+            elif self.state == STATE_SETTINGS:
+                act = self.settings_menu.handle_event(event, self.sound_manager)
+                if act == "BACK":
+                    self.save_game_data()
+                    self.state = self.previous_state
+                elif act == "TOGGLE_MUTE":
+                    self.save_game_data()
+                elif act == "TOGGLE_FULLSCREEN":
+                    self.toggle_fullscreen()
+                    self.save_game_data()
 
             elif self.state == STATE_LEVEL_SELECT:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -593,33 +702,34 @@ class Game:
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
                     if event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_w):
-                        for ball in self.balls:
-                            if ball.attached:
-                                ball.attached = False
-                                hit_pos = getattr(ball, "sticky_offset_x", 0)
-                                relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
-                                
-                                speed_mult = float(DIFFICULTY_SETTINGS[self.difficulty]["ball_speed_mult"])
-                                BALL_TEMPO = BALL_SPEED * speed_mult
-                                if abs(relative_hit) < 0.1:
-                                    relative_hit = random.choice([-0.15, 0.15])
-                                
-                                ball.speed_x = relative_hit * (BALL_TEMPO * 0.8)
-                                ball.speed_y = -math.sqrt(max(1.0, BALL_TEMPO**2 - ball.speed_x**2))
-
-                        if "laser_paddle" in self.active_effects:
-                            l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
-                            l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
-                            self.lasers.add(l1, l2)
-                            self.all_sprites.add(l1, l2)
-                    
+                        self.launch_ball_or_laser()
                     elif event.key == pygame.K_p:
                         self.state = STATE_PAUSED
+                        self.sound_manager.stop_bgm()
 
             elif self.state == STATE_PAUSED:
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_p, pygame.K_ESCAPE):
-                    self.state = STATE_PLAYING
-                    self.last_frame_ticks = pygame.time.get_ticks()
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mpos = pygame.mouse.get_pos()
+                    if self.pause_resume_rect.collidepoint(mpos):
+                        self.state = STATE_PLAYING
+                        self.last_frame_ticks = pygame.time.get_ticks()
+                        self.sound_manager.play_bgm()
+                    elif self.pause_opts_rect.collidepoint(mpos):
+                        self.previous_state = STATE_PAUSED
+                        self.state = STATE_SETTINGS
+                    elif self.pause_menu_rect.collidepoint(mpos):
+                        self.state = STATE_MENU
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_p, pygame.K_SPACE):
+                        self.state = STATE_PLAYING
+                        self.last_frame_ticks = pygame.time.get_ticks()
+                        self.sound_manager.play_bgm()
+                    elif event.key == pygame.K_o:
+                        self.previous_state = STATE_PAUSED
+                        self.state = STATE_SETTINGS
+                    elif event.key == pygame.K_ESCAPE:
+                        self.state = STATE_MENU
 
             elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
                 if self.qualifies_for_highscores and not self.is_score_saved:
@@ -684,6 +794,7 @@ class Game:
                     self.boss_projectiles.add(boss.pending_projectile)
                     self.all_sprites.add(boss.pending_projectile)
                     boss.pending_projectile = None
+                    self.sound_manager.play_sound("boss_shoot")
             
             self.boss_projectiles.update(sh)
 
@@ -709,10 +820,33 @@ class Game:
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
-            self.paddle.update(sw)
+            # --- CONTROLLER ANALOG STICK & D-PAD PADDLE MOVEMENT ---
+            ctrl_x = 0.0
+            for js in self.joysticks:
+                try:
+                    axis_x = js.get_axis(0)
+                    if abs(axis_x) > 0.2:
+                        ctrl_x = axis_x
+                        break
+                    if js.get_numhats() > 0:
+                        hat = js.get_hat(0)
+                        if hat[0] != 0:
+                            ctrl_x = float(hat[0])
+                            break
+                except Exception:
+                    pass
+
+            self.paddle.update(sw, controller_move_x=ctrl_x)
             self.powerups.update(sh)
             self.blocks.update()
             self.lasers.update()
+            
+            # Ball position check for wall bounce sounds
+            for ball in self.balls:
+                if not ball.attached:
+                    if ball.rect.left <= 0 or ball.rect.right >= sw or ball.rect.top <= 0:
+                        self.sound_manager.play_sound("wall_hit")
+
             self.balls.update(self.time_factor, sw, sh)
 
             # --- BOSS-GESCHOSS KOLLISIONEN MIT PADDLE & ABWEHR ---
@@ -722,6 +856,7 @@ class Game:
                 self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
                 self.add_screen_shake(4.0, 200)
                 self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24)
+                self.sound_manager.play_sound("paddle_stun")
                 self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
 
             pygame.sprite.groupcollide(self.boss_projectiles, self.secure_borders, True, False)
@@ -737,11 +872,13 @@ class Game:
                         defeated = boss.hit(1)
                         self.spawn_particles(laser.rect.centerx, laser.rect.top, RED, count=8)
                         self.spawn_floating_text(laser.rect.centerx, laser.rect.top - 5, "+250", ORANGE)
+                        self.sound_manager.play_sound("boss_hit")
                         if defeated:
                             boss.kill()
                             self.add_screen_shake(12.0, 600)
                             self.spawn_particles(boss.rect.centerx, boss.rect.centery, (255, 215, 0), count=40)
                             self.spawn_floating_text(boss.rect.centerx, boss.rect.centery, "BOSS DEFEATED!", (255, 215, 0), font_size=32)
+                            self.sound_manager.play_sound("explosion")
                             self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
 
                 hit_blocks = pygame.sprite.spritecollide(laser, self.blocks, False)
@@ -752,6 +889,7 @@ class Game:
                         if destroyed:
                             block.kill()
                             self.spawn_floating_text(block.rect.centerx, block.rect.centery, "+100", YELLOW)
+                            self.sound_manager.play_sound("block_hit")
                             if getattr(block, 'is_explosive', False) or block.block_type == 'B':
                                 self.trigger_explosion(block)
                             else:
@@ -766,17 +904,20 @@ class Game:
                         self.spawn_particles(ball.rect.centerx, ball.rect.centery, ORANGE, count=10)
                         self.add_screen_shake(3.0, 150)
                         self.spawn_floating_text(ball.rect.centerx, ball.rect.centery, "+250", ORANGE)
+                        self.sound_manager.play_sound("boss_hit")
                         defeated = boss.hit(1)
                         if defeated:
                             boss.kill()
                             self.add_screen_shake(12.0, 600)
                             self.spawn_particles(boss.rect.centerx, boss.rect.centery, (255, 215, 0), count=40)
                             self.spawn_floating_text(boss.rect.centerx, boss.rect.centery, "BOSS DEFEATED!", (255, 215, 0), font_size=32)
+                            self.sound_manager.play_sound("explosion")
                             self.spawn_powerup(boss.rect.centerx, boss.rect.centery, guaranteed_type='P')
 
                 # --- PADDLE-KOLLISION ---
                 if pygame.sprite.collide_rect(ball, self.paddle) and ball.speed_y > 0:
                     self.paddle_hits_count += 1
+                    self.sound_manager.play_sound("paddle_hit")
                     if self.paddle_sticky:
                         ball.attached = True
                         ball.sticky_offset_x = ball.rect.centerx - self.paddle.rect.centerx
@@ -799,6 +940,7 @@ class Game:
                 if pygame.sprite.spritecollide(ball, self.secure_borders, False) and ball.speed_y > 0:
                     ball.speed_y *= -1
                     self.spawn_particles(ball.rect.centerx, ball.rect.bottom, CYAN, count=8)
+                    self.sound_manager.play_sound("wall_hit")
 
                 # --- BLOCK-KOLLISION ---
                 hit_blocks = pygame.sprite.spritecollide(ball, self.blocks, False)
@@ -817,6 +959,7 @@ class Game:
 
                             self.spawn_particles(block.rect.centerx, block.rect.centery, YELLOW if block.health==1 else ORANGE, count=8)
                             destroyed = block.hit(force_destroy=force)
+                            self.sound_manager.play_sound("block_hit")
                             if destroyed:
                                 block.kill()
                                 pts = 100 * block.health if hasattr(block, 'health') else 100
@@ -836,6 +979,7 @@ class Game:
                         ball.speed_y = -abs(ball.speed_y)
                         self.safety_net.kill()
                         self.safety_net = None
+                        self.sound_manager.play_sound("wall_hit")
                         if "safety_net" in self.active_effects:
                             del self.active_effects["safety_net"]
                     elif ball.rect.top > sh:
@@ -846,6 +990,7 @@ class Game:
                 self.apply_powerup(p_up)
 
             if len(self.balls) == 0:
+                self.sound_manager.stop_bgm()
                 self.state = STATE_MENU
                 pygame.display.set_caption(TITLE)
 
@@ -854,6 +999,8 @@ class Game:
             boss_alive = any(b.alive() for b in self.bosses)
 
             if len(mandatory_remaining) == 0 and not boss_alive:
+                self.sound_manager.stop_bgm()
+                self.sound_manager.play_sound("level_win")
                 self.elapsed_seconds_at_win = (pygame.time.get_ticks() - self.level_start_ticks) / 1000.0
                 self.final_score = self.calculate_score()
                 
@@ -941,6 +1088,12 @@ class Game:
             self.screen.blit(score_txt, (sw - 140, 15))
             self.screen.blit(diff_txt, (20, 15))
 
+            # Controller & Mute Indicator
+            ctrl_status = f"🎮 {len(self.joysticks)} Gamepad" if self.joysticks else "⌨️ Keyboard"
+            audio_icon = "🔇 MUTED" if self.sound_manager.muted else "🔊 SFX"
+            audio_txt = font_hud.render(f"{ctrl_status} | [M] {audio_icon}", True, (200, 200, 200))
+            self.screen.blit(audio_txt, (sw - 230, 40))
+
             # Boss HP Bar im HUD rendern
             for boss in self.bosses:
                 if boss.alive():
@@ -970,17 +1123,38 @@ class Game:
                 self.screen.blit(eff_surf, (20, sh - 25))
         
         if self.state == STATE_PAUSED:
-            font = pygame.font.SysFont(None, 60, bold=True)
+            font = pygame.font.SysFont(None, 56, bold=True)
             text_surf = font.render("SPIEL PAUSIERT", True, WHITE)
-            text_rect = text_surf.get_rect(center=(sw // 2, sh // 2))
-            
-            sub_font = pygame.font.SysFont(None, 24)
-            sub_surf = sub_font.render("Drücke 'P' oder 'ESC' zum Weiterspielen", True, (200, 200, 200))
-            sub_rect = sub_surf.get_rect(center=(sw // 2, (sh // 2) + 50))
-            
+            text_rect = text_surf.get_rect(center=(sw // 2, sh // 2 - 60))
             self.screen.blit(text_surf, text_rect)
-            self.screen.blit(sub_surf, sub_rect)
             
+            sub_font = pygame.font.SysFont(None, 22)
+            
+            # Interactive Pause Buttons
+            mpos = pygame.mouse.get_pos()
+            
+            col_res = (50, 150, 50) if not self.pause_resume_rect.collidepoint(mpos) else (70, 190, 70)
+            col_opt = (0, 130, 140) if not self.pause_opts_rect.collidepoint(mpos) else (0, 170, 180)
+            col_men = (70, 70, 70) if not self.pause_menu_rect.collidepoint(mpos) else (100, 100, 100)
+            
+            pygame.draw.rect(self.screen, col_res, self.pause_resume_rect, border_radius=6)
+            pygame.draw.rect(self.screen, WHITE, self.pause_resume_rect, width=2, border_radius=6)
+            txt_res = sub_font.render("Weiter [P/A]", True, WHITE)
+            self.screen.blit(txt_res, (self.pause_resume_rect.centerx - txt_res.get_width() // 2, self.pause_resume_rect.centery - txt_res.get_height() // 2))
+
+            pygame.draw.rect(self.screen, col_opt, self.pause_opts_rect, border_radius=6)
+            pygame.draw.rect(self.screen, WHITE, self.pause_opts_rect, width=2, border_radius=6)
+            txt_opt = sub_font.render("Optionen [O]", True, WHITE)
+            self.screen.blit(txt_opt, (self.pause_opts_rect.centerx - txt_opt.get_width() // 2, self.pause_opts_rect.centery - txt_opt.get_height() // 2))
+
+            pygame.draw.rect(self.screen, col_men, self.pause_menu_rect, border_radius=6)
+            pygame.draw.rect(self.screen, WHITE, self.pause_menu_rect, width=2, border_radius=6)
+            txt_men = sub_font.render("Hauptmenü [ESC/B]", True, WHITE)
+            self.screen.blit(txt_men, (self.pause_menu_rect.centerx - txt_men.get_width() // 2, self.pause_menu_rect.centery - txt_men.get_height() // 2))
+
+        elif self.state == STATE_SETTINGS:
+            self.settings_menu.draw(self.sound_manager, self.difficulty, self.is_fullscreen)
+
         elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
             self.particles.draw(self.screen)
             for ft in self.floating_texts:

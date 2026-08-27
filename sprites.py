@@ -341,20 +341,24 @@ class Paddle(pygame.sprite.Sprite):
     def is_stunned(self) -> bool:
         return pygame.time.get_ticks() < self.stunned_until_ticks
 
-    def update(self, screen_width: int = SCREEN_WIDTH):
+    def update(self, screen_width: int = SCREEN_WIDTH, controller_move_x: float = 0.0):
         keys = pygame.key.get_pressed()
         move_left = keys[pygame.K_LEFT] or keys[pygame.K_a]
         move_right = keys[pygame.K_RIGHT] or keys[pygame.K_d]
         
+        move_val = 0.0
+        if move_left: move_val -= 1.0
+        if move_right: move_val += 1.0
+        if controller_move_x != 0.0:
+            move_val = controller_move_x
+            
         if self.inverted_controls:
-            move_left, move_right = move_right, move_left
+            move_val *= -1.0
 
         current_speed = self.speed * 0.35 if self.is_stunned() else self.speed
 
-        if move_left:
-            self.rect.x -= int(current_speed)
-        if move_right:
-            self.rect.x += int(current_speed)
+        if move_val != 0.0:
+            self.rect.x += int(move_val * current_speed)
             
         if self.rect.left < 0: 
             self.rect.left = 0

@@ -29,6 +29,12 @@ class LevelEditor:
         self.selected_level_idx: int = 0
         self.refresh_level_list()
         
+        # Box-Fill Mode (Rechteck-Füllen)
+        self.box_fill_mode = False
+        self.drag_start: tuple[int, int] | None = None
+        self.drag_current: tuple[int, int] | None = None
+        self.drag_button: int = 1
+        
         self.types: dict[str, dict[str, tuple[int, int, int] | str]] = {
             "0": {"color": BLUE, "label": "Radiergummi (0)"},
             "1": {"color": YELLOW, "label": "Normal 1 HP (1)"},
@@ -50,7 +56,7 @@ class LevelEditor:
         self.running = True
         
         # Statusmeldung für Feedback
-        self.status_msg = "Level-Editor bereit. Wähle Werkzeuge oder lade ein vorhandenes Level."
+        self.status_msg = "Level-Editor bereit. Wähle Werkzeuge oder ziehe ein Rechteck (SHIFT / F)."
         self.status_timer = 0
 
     def set_status(self, msg: str):
@@ -172,12 +178,10 @@ class LevelEditor:
         orig_cols = max(len(l) for l in lines)
         orig_rows = len(lines)
         
-        # Mindestens 15 Spalten und 12 Zeilen für Erweiterungen bieten
         self.cols = max(15, orig_cols)
         self.rows = max(12, orig_rows)
         self.grid = [["0" for _ in range(self.cols)] for _ in range(self.rows)]
         
-        # Karte zentriert in das erweiterte Raster einfügen
         target_r = (self.rows - orig_rows) // 2
         target_c = (self.cols - orig_cols) // 2
         
@@ -243,32 +247,80 @@ class LevelEditor:
             self.clock.tick(60)
 
     def handle_event(self, event: pygame.event.Event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            mx, my = pygame.mouse.get_pos()
-            if my < self.grid_top:
-                # Klick auf UI-Buttons in der oberen Leiste
-                if self.btn_col_minus.collidepoint((mx, my)):
-                    self.set_grid_size(self.cols - 1, self.rows)
-                elif self.btn_col_plus.collidepoint((mx, my)):
-                    self.set_grid_size(self.cols + 1, self.rows)
-                elif self.btn_row_minus.collidepoint((mx, my)):
-                    self.set_grid_size(self.cols, self.rows - 1)
-                elif self.btn_row_plus.collidepoint((mx, my)):
-                    self.set_grid_size(self.cols, self.rows + 1)
-                elif self.btn_center.collidepoint((mx, my)):
-                    self.center_grid()
-                elif self.btn_prev_lvl.collidepoint((mx, my)):
-                    if self.available_levels:
-                        self.selected_level_idx = (self.selected_level_idx - 1) % len(self.available_levels)
-                elif self.btn_next_lvl.collidepoint((mx, my)):
-                    if self.available_levels:
-                        self.selected_level_idx = (self.selected_level_idx + 1) % len(self.available_levels)
-                elif self.btn_load_lvl.collidepoint((mx, my)):
-                    self.load_selected_level()
-                elif self.btn_new_lvl.collidepoint((mx, my)):
-                    self.create_new_level()
-                elif self.btn_save_lvl.collidepoint((mx, my)):
-                    self.save_level()
+        mx, my = pygame.mouse.get_pos()
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button in (1, 3):
+                if my < self.grid_top:
+                    # Klick auf UI-Buttons in der oberen Leiste
+                    if event.button == 1:
+                        if self.btn_col_minus.collidepoint((mx, my)):
+                            self.set_grid_size(self.cols - 1, self.rows)
+                        elif self.btn_col_plus.collidepoint((mx, my)):
+                            self.set_grid_size(self.cols + 1, self.rows)
+                        elif self.btn_row_minus.collidepoint((mx, my)):
+                            self.set_grid_size(self.cols, self.rows - 1)
+                        elif self.btn_row_plus.collidepoint((mx, my)):
+                            self.set_grid_size(self.cols, self.rows + 1)
+                        elif self.btn_box_fill.collidepoint((mx, my)):
+                            self.box_fill_mode = not self.box_fill_mode
+                            self.set_status(f"Box-Füllen Modus: {'AN' if self.box_fill_mode else 'AUS'}")
+                        elif self.btn_center.collidepoint((mx, my)):
+                            self.center_grid()
+                        elif self.btn_prev_lvl.collidepoint((mx, my)):
+                            if self.available_levels:
+                                self.selected_level_idx = (self.selected_level_idx - 1) % len(self.available_levels)
+                        elif self.btn_next_lvl.collidepoint((mx, my)):
+                            if self.available_levels:
+                                self.selected_level_idx = (self.selected_level_idx + 1) % len(self.available_levels)
+                        elif self.btn_load_lvl.collidepoint((mx, my)):
+                            self.load_selected_level()
+                        elif self.btn_new_lvl.collidepoint((mx, my)):
+                            self.create_new_level()
+                        elif self.btn_save_lvl.collidepoint((mx, my)):
+                            self.save_level()
+                else:
+                    # Klick im Spielfeld -> Drag-Start für Einzelstift oder Box-Fill
+                    col = mx // max(1, self.block_width)
+                    row = (my - self.grid_top) // max(1, self.block_height)
+                    if 0 <= col < self.cols and 0 <= row < self.rows:
+                        self.drag_start = (col, row)
+                        self.drag_current = (col, row)
+                        self.drag_button = event.button
+
+        elif event.type == pygame.MOUSEMOTION and self.drag_start:
+            col = mx // max(1, self.block_width)
+            row = (my - self.grid_top) // max(1, self.block_height)
+            col = max(0, min(self.cols - 1, col))
+            row = max(0, min(self.rows - 1, row))
+            self.drag_current = (col, row)
+
+        elif event.type == pygame.MOUSEBUTTONUP and self.drag_start:
+            if self.drag_current:
+                col = mx // max(1, self.block_width)
+                row = (my - self.grid_top) // max(1, self.block_height)
+                col = max(0, min(self.cols - 1, col))
+                row = max(0, min(self.rows - 1, row))
+                
+                is_shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+                if self.box_fill_mode or is_shift:
+                    # Rechteckigen Bereich befüllen
+                    min_c = min(self.drag_start[0], col)
+                    max_c = max(self.drag_start[0], col)
+                    min_r = min(self.drag_start[1], row)
+                    max_r = max(self.drag_start[1], row)
+                    
+                    target_type = self.current_type if self.drag_button == 1 else "0"
+                    for r in range(min_r, max_r + 1):
+                        for c in range(min_c, max_c + 1):
+                            self.grid[r][c] = target_type
+                            
+                    w_count = max_c - min_c + 1
+                    h_count = max_r - min_r + 1
+                    self.set_status(f"Rechteck befüllt: {w_count}x{h_count} Blöcke mit '{target_type}'.")
+                    
+            self.drag_start = None
+            self.drag_current = None
 
         if event.type == pygame.KEYDOWN:
             # Typen-Auswahl per Tastatur
@@ -287,6 +339,9 @@ class LevelEditor:
             if event.key == pygame.K_0: self.current_type = "0"
             
             # Hotkeys für Editor-Funktionen
+            if event.key == pygame.K_f:
+                self.box_fill_mode = not self.box_fill_mode
+                self.set_status(f"Box-Füllen Modus: {'AN' if self.box_fill_mode else 'AUS'}")
             if event.key == pygame.K_c:
                 self.center_grid()
             if event.key == pygame.K_l:
@@ -307,18 +362,21 @@ class LevelEditor:
                 self.set_grid_size(self.cols, self.rows + 1)
 
     def update(self):
-        mouse_buttons = pygame.mouse.get_pressed()
-        if mouse_buttons[0] or mouse_buttons[2]:
-            mx, my = pygame.mouse.get_pos()
-            if my >= self.grid_top:
-                col = mx // max(1, self.block_width)
-                row = (my - self.grid_top) // max(1, self.block_height)
-                
-                if 0 <= col < self.cols and 0 <= row < self.rows:
-                    if mouse_buttons[0]:
-                        self.grid[row][col] = self.current_type
-                    elif mouse_buttons[2]:
-                        self.grid[row][col] = "0"
+        # Kontinuierliches Zeichnen nur im normalen Stift-Modus (wenn Box-Fill aus & SHIFT nicht gedrückt)
+        is_shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        if not self.box_fill_mode and not is_shift:
+            mouse_buttons = pygame.mouse.get_pressed()
+            if mouse_buttons[0] or mouse_buttons[2]:
+                mx, my = pygame.mouse.get_pos()
+                if my >= self.grid_top:
+                    col = mx // max(1, self.block_width)
+                    row = (my - self.grid_top) // max(1, self.block_height)
+                    
+                    if 0 <= col < self.cols and 0 <= row < self.rows:
+                        if mouse_buttons[0]:
+                            self.grid[row][col] = self.current_type
+                        elif mouse_buttons[2]:
+                            self.grid[row][col] = "0"
 
     def draw_button(self, rect: pygame.Rect, text: str, bg_color: tuple[int, int, int] = (60, 60, 70), text_color: tuple[int, int, int] = WHITE):
         pygame.draw.rect(self.screen, bg_color, rect, border_radius=4)
@@ -336,13 +394,14 @@ class LevelEditor:
         self.btn_row_minus = pygame.Rect(110, 10, 24, 24)
         self.btn_row_plus = pygame.Rect(138, 10, 24, 24)
         
-        self.btn_center = pygame.Rect(190, 10, 85, 24)
+        self.btn_box_fill = pygame.Rect(190, 10, 70, 24)
+        self.btn_center = pygame.Rect(268, 10, 75, 24)
         
-        self.btn_prev_lvl = pygame.Rect(290, 10, 24, 24)
-        self.btn_next_lvl = pygame.Rect(415, 10, 24, 24)
-        self.btn_load_lvl = pygame.Rect(445, 10, 60, 24)
-        self.btn_new_lvl = pygame.Rect(515, 10, 50, 24)
-        self.btn_save_lvl = pygame.Rect(575, 10, 85, 24)
+        self.btn_prev_lvl = pygame.Rect(355, 10, 24, 24)
+        self.btn_next_lvl = pygame.Rect(475, 10, 24, 24)
+        self.btn_load_lvl = pygame.Rect(505, 10, 55, 24)
+        self.btn_new_lvl = pygame.Rect(568, 10, 45, 24)
+        self.btn_save_lvl = pygame.Rect(620, 10, 80, 24)
         
         # Top-Bar Hintergrund
         pygame.draw.rect(self.screen, (30, 30, 35), (0, 0, sw, self.grid_top))
@@ -350,21 +409,24 @@ class LevelEditor:
         # Spalten & Zeilen Buttons zeichnen
         self.draw_button(self.btn_col_minus, "-")
         self.draw_button(self.btn_col_plus, "+")
-        col_label = self.font.render(f"Spalten: {self.cols}", True, WHITE)
+        col_label = self.font.render(f"Col: {self.cols}", True, WHITE)
         self.screen.blit(col_label, (66, 15))
 
         self.draw_button(self.btn_row_minus, "-")
         self.draw_button(self.btn_row_plus, "+")
-        row_label = self.font.render(f"Zeilen: {self.rows}", True, WHITE)
+        row_label = self.font.render(f"Row: {self.rows}", True, WHITE)
         self.screen.blit(row_label, (166, 15))
 
+        # Box Fill & Zentrieren Buttons
+        box_bg = (0, 160, 160) if self.box_fill_mode else (60, 60, 70)
+        self.draw_button(self.btn_box_fill, "Box (F)", bg_color=box_bg)
         self.draw_button(self.btn_center, "Zentrieren", bg_color=(50, 100, 150))
 
         # Level-Auswahl Buttons zeichnen
         self.draw_button(self.btn_prev_lvl, "<")
         lvl_name = self.available_levels[self.selected_level_idx] if self.available_levels else "Keine Level"
         lvl_label = self.font.render(lvl_name, True, YELLOW)
-        self.screen.blit(lvl_label, (320, 15))
+        self.screen.blit(lvl_label, (385, 15))
         self.draw_button(self.btn_next_lvl, ">")
         self.draw_button(self.btn_load_lvl, "Laden", bg_color=(40, 120, 40))
         self.draw_button(self.btn_new_lvl, "Neu")
@@ -373,7 +435,8 @@ class LevelEditor:
         # Zeile 2 im Header: Aktuelles Werkzeug & Bearbeitungsstatus
         editing_str = f"Bearbeite: {self.editing_filename}" if self.editing_filename else "Neues Level"
         tool_str = f"Werkzeug: {self.types.get(self.current_type, {}).get('label', 'Unbekannt')}"
-        info_surf = self.font.render(f"{tool_str}  |  {editing_str}", True, GREEN)
+        mode_str = "MODUS: RECHTECK-BOX (Ziehen & Loslassen)" if (self.box_fill_mode or (pygame.key.get_mods() & pygame.KMOD_SHIFT)) else "MODUS: EINZEL-STIFT"
+        info_surf = self.font.render(f"{tool_str}  |  {mode_str}  |  {editing_str}", True, GREEN)
         self.screen.blit(info_surf, (10, 48))
 
         # Grid zeichnen
@@ -389,12 +452,31 @@ class LevelEditor:
                 else:
                     pygame.draw.rect(self.screen, (50, 50, 50), rect, 1)
                     
+        # Visuelle Rechteck-Vorschau während des Box-Füllens
+        is_shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        if self.drag_start and self.drag_current and (self.box_fill_mode or is_shift):
+            min_c = min(self.drag_start[0], self.drag_current[0])
+            max_c = max(self.drag_start[0], self.drag_current[0])
+            min_r = min(self.drag_start[1], self.drag_current[1])
+            max_r = max(self.drag_start[1], self.drag_current[1])
+            
+            preview_x = min_c * self.block_width
+            preview_y = self.grid_top + min_r * self.block_height
+            preview_w = (max_c - min_c + 1) * self.block_width
+            preview_h = (max_r - min_r + 1) * self.block_height
+            
+            # Semitransparente Vorschaufläche
+            overlay = pygame.Surface((preview_w, preview_h), pygame.SRCALPHA)
+            overlay.fill((0, 255, 255, 60))
+            self.screen.blit(overlay, (preview_x, preview_y))
+            pygame.draw.rect(self.screen, CYAN, (preview_x, preview_y, preview_w, preview_h), 2)
+
         # Untere Statusleiste & Anleitung
         pygame.draw.rect(self.screen, (25, 25, 30), (0, sh - 35, sw, 35))
         status_surf = self.font.render(self.status_msg, True, CYAN)
         self.screen.blit(status_surf, (10, sh - 28))
         
-        help_text = "Hotkeys: 1-5, P, D, B, X, T, M, K | 0=Löschen | C=Zentrieren | L=Laden | S=Speichern | ESC=Hauptmenü"
+        help_text = "SHIFT/F=Box-Füllen | 1-5,P,D,B,X,T,M,K | 0=Löschen | C=Zentrieren | L=Laden | S=Speichern | ESC=Menü"
         help_surf = self.font.render(help_text, True, (180, 180, 180))
         self.screen.blit(help_surf, (sw - help_surf.get_width() - 10, sh - 28))
 

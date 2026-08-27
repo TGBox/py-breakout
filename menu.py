@@ -13,7 +13,7 @@ class Button:
         self.hover_color = hover_color
         self.text_color = text_color
         self.current_color = base_color
-        self.font = pygame.font.SysFont(None, 28, bold=True)
+        self.font = pygame.font.SysFont(None, 26, bold=True)
 
     def draw(self, screen: Surface):
         # Zeichnet ein abgerundetes Rechteck mit weißem Rahmen
@@ -36,12 +36,12 @@ class Button:
 class MainMenu:
     """Das interaktive Hauptmenü mit dynamischer Layoutanpassung"""
     def __init__(self):
-        b_width, b_height = 280, 38
+        b_width, b_height = 280, 34
         
-        # Alle Buttons mit ihren Farbstilen anlegen
         self.buttons = {
             "PLAY":         Button(0, 0, b_width, b_height, "Spiel Starten", (50, 150, 50), (70, 200, 70)),
             "LEVEL_SELECT": Button(0, 0, b_width, b_height, "Level Auswählen", (40, 100, 180), (60, 130, 230)),
+            "SETTINGS":     Button(0, 0, b_width, b_height, "Einstellungen & Audio", (0, 150, 150), (0, 190, 190)),
             "DIFFICULTY":   Button(0, 0, b_width, b_height, "Schwierigkeit: Normal", (200, 140, 40), (230, 170, 60)),
             "EDITOR":       Button(0, 0, b_width, b_height, "Level Editor", (120, 50, 150), (160, 70, 200)),
             "FULLSCREEN":   Button(0, 0, b_width, b_height, "Vollbild: Aus", (0, 130, 140), (0, 180, 190)),
@@ -50,7 +50,7 @@ class MainMenu:
             "QUIT":         Button(0, 0, b_width, b_height, "Beenden", (70, 70, 70), (100, 100, 100)),
         }
         
-        self.title_font = pygame.font.SysFont(None, 54, bold=True)
+        self.title_font = pygame.font.SysFont(None, 52, bold=True)
         self.info_font = pygame.font.SysFont(None, 22)
 
     def set_difficulty_label(self, difficulty_name: str):
@@ -58,12 +58,12 @@ class MainMenu:
         self.buttons["DIFFICULTY"].text = f"Schwierigkeit: {label}"
 
     def update_layout(self, screen_w: int, screen_h: int, is_fullscreen: bool):
-        b_width, b_height = 280, 38
-        spacing = 46
-        start_y = max(140, screen_h // 2 - (len(self.buttons) * spacing) // 2 + 20)
+        b_width, b_height = 280, 34
+        spacing = 41
+        order = ["PLAY", "LEVEL_SELECT", "SETTINGS", "DIFFICULTY", "EDITOR", "FULLSCREEN", "HIGHSCORE", "RESET", "QUIT"]
+        start_y = max(115, screen_h // 2 - (len(order) * spacing) // 2 + 25)
         center_x = screen_w // 2 - b_width // 2
 
-        order = ["PLAY", "LEVEL_SELECT", "DIFFICULTY", "EDITOR", "FULLSCREEN", "HIGHSCORE", "RESET", "QUIT"]
         for idx, key in enumerate(order):
             btn = self.buttons[key]
             btn.rect.x = center_x
@@ -77,12 +77,12 @@ class MainMenu:
 
         # Titel
         title_surf = self.title_font.render("BREAKOUT CHAMPION", True, YELLOW)
-        title_rect = title_surf.get_rect(center=(screen_w // 2, max(35, screen_h // 2 - 220)))
+        title_rect = title_surf.get_rect(center=(screen_w // 2, max(30, screen_h // 2 - 225)))
         screen.blit(title_surf, title_rect)
         
         # Info über Fortschritt
         info_surf = self.info_font.render(f"Freigeschaltete Level: {unlocked_level}", True, (180, 180, 180))
-        info_rect = info_surf.get_rect(center=(screen_w // 2, title_rect.bottom + 15))
+        info_rect = info_surf.get_rect(center=(screen_w // 2, title_rect.bottom + 10))
         screen.blit(info_surf, info_rect)
         
         # Alle Buttons zeichnen
@@ -196,3 +196,180 @@ class LevelSelectionMenu:
             if rect.collidepoint(mouse_pos) and is_unlocked:
                 return level_num
         return None
+
+
+class SettingsMenu:
+    """Interaktives Einstellungen- & Audio-Menü"""
+    def __init__(self, screen: Surface):
+        self.screen = screen
+        self.title_font = pygame.font.SysFont(None, 46, bold=True)
+        self.label_font = pygame.font.SysFont(None, 24, bold=True)
+        self.small_font = pygame.font.SysFont(None, 20)
+        
+        self.dragging_sfx = False
+        self.dragging_music = False
+        
+        # Rects für Interaktion
+        self.sfx_slider_rect = pygame.Rect(0, 0, 220, 16)
+        self.music_slider_rect = pygame.Rect(0, 0, 220, 16)
+        
+        self.test_sound_btn = pygame.Rect(0, 0, 160, 36)
+        self.mute_btn = pygame.Rect(0, 0, 160, 36)
+        self.fullscreen_btn = pygame.Rect(0, 0, 160, 36)
+        self.diff_btn = pygame.Rect(0, 0, 160, 36)
+        self.back_btn = pygame.Rect(0, 0, 200, 45)
+
+    def draw(self, sound_manager: Any, difficulty: str, is_fullscreen: bool):
+        sw, sh = self.screen.get_width(), self.screen.get_height()
+        center_x = sw // 2
+        
+        # Titel
+        title_surf = self.title_font.render("EINSTELLUNGEN & AUDIO", True, YELLOW)
+        self.screen.blit(title_surf, (center_x - title_surf.get_width() // 2, 35))
+        
+        start_y = 105
+        spacing = 55
+        slider_w = 240
+        
+        # --- 1. SFX LAUTSTÄRKE SLIDER ---
+        self.sfx_slider_rect = pygame.Rect(center_x - 30, start_y, slider_w, 16)
+        lbl_sfx = self.label_font.render("SFX Lautstärke:", True, WHITE)
+        val_sfx = self.label_font.render(f"{int(sound_manager.sfx_volume * 100)}%", True, CYAN)
+        
+        self.screen.blit(lbl_sfx, (center_x - 220, start_y - 2))
+        self.screen.blit(val_sfx, (self.sfx_slider_rect.right + 15, start_y - 2))
+        
+        # Slider Bar
+        pygame.draw.rect(self.screen, (60, 60, 70), self.sfx_slider_rect, border_radius=6)
+        fill_w = int(slider_w * sound_manager.sfx_volume)
+        if fill_w > 0:
+            pygame.draw.rect(self.screen, CYAN, (self.sfx_slider_rect.x, self.sfx_slider_rect.y, fill_w, 16), border_radius=6)
+        pygame.draw.rect(self.screen, WHITE, self.sfx_slider_rect, width=2, border_radius=6)
+        # Slider Handle Knob
+        knob_x = self.sfx_slider_rect.x + fill_w
+        pygame.draw.circle(self.screen, WHITE, (knob_x, self.sfx_slider_rect.centery), 11)
+
+        # --- 2. BGM MUSIK LAUTSTÄRKE SLIDER ---
+        start_y += spacing
+        self.music_slider_rect = pygame.Rect(center_x - 30, start_y, slider_w, 16)
+        lbl_mus = self.label_font.render("Musik (BGM):", True, WHITE)
+        val_mus = self.label_font.render(f"{int(sound_manager.music_volume * 100)}%", True, CYAN)
+        
+        self.screen.blit(lbl_mus, (center_x - 220, start_y - 2))
+        self.screen.blit(val_mus, (self.music_slider_rect.right + 15, start_y - 2))
+        
+        # Slider Bar
+        pygame.draw.rect(self.screen, (60, 60, 70), self.music_slider_rect, border_radius=6)
+        fill_m = int(slider_w * sound_manager.music_volume)
+        if fill_m > 0:
+            pygame.draw.rect(self.screen, GREEN, (self.music_slider_rect.x, self.music_slider_rect.y, fill_m, 16), border_radius=6)
+        pygame.draw.rect(self.screen, WHITE, self.music_slider_rect, width=2, border_radius=6)
+        # Slider Handle Knob
+        knob_mx = self.music_slider_rect.x + fill_m
+        pygame.draw.circle(self.screen, WHITE, (knob_mx, self.music_slider_rect.centery), 11)
+
+        # --- 3. TOGGLE & TEST BUTTONS ---
+        start_y += spacing + 10
+        btn_w, btn_h = 160, 36
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Sound Test Button
+        self.test_sound_btn = pygame.Rect(center_x - 230, start_y, btn_w, btn_h)
+        col_test = (60, 120, 180) if not self.test_sound_btn.collidepoint(mouse_pos) else (80, 150, 220)
+        pygame.draw.rect(self.screen, col_test, self.test_sound_btn, border_radius=6)
+        pygame.draw.rect(self.screen, WHITE, self.test_sound_btn, width=2, border_radius=6)
+        txt_test = self.small_font.render("🔊 Sound Test", True, WHITE)
+        self.screen.blit(txt_test, (self.test_sound_btn.centerx - txt_test.get_width() // 2, self.test_sound_btn.centery - txt_test.get_height() // 2))
+
+        # Mute Toggle Button
+        self.mute_btn = pygame.Rect(center_x - 55, start_y, btn_w, btn_h)
+        col_mute = (160, 50, 50) if sound_manager.muted else ((50, 140, 50) if not self.mute_btn.collidepoint(mouse_pos) else (70, 180, 70))
+        pygame.draw.rect(self.screen, col_mute, self.mute_btn, border_radius=6)
+        pygame.draw.rect(self.screen, WHITE, self.mute_btn, width=2, border_radius=6)
+        txt_mute = self.small_font.render("Ton: STUMM" if sound_manager.muted else "Ton: AKTIV", True, WHITE)
+        self.screen.blit(txt_mute, (self.mute_btn.centerx - txt_mute.get_width() // 2, self.mute_btn.centery - txt_mute.get_height() // 2))
+
+        # Vollbild Toggle Button
+        self.fullscreen_btn = pygame.Rect(center_x + 120, start_y, btn_w, btn_h)
+        col_fs = (0, 130, 140) if not self.fullscreen_btn.collidepoint(mouse_pos) else (0, 170, 180)
+        pygame.draw.rect(self.screen, col_fs, self.fullscreen_btn, border_radius=6)
+        pygame.draw.rect(self.screen, WHITE, self.fullscreen_btn, width=2, border_radius=6)
+        txt_fs = self.small_font.render("Vollbild: AN" if is_fullscreen else "Vollbild: AUS", True, WHITE)
+        self.screen.blit(txt_fs, (self.fullscreen_btn.centerx - txt_fs.get_width() // 2, self.fullscreen_btn.centery - txt_fs.get_height() // 2))
+
+        # --- 4. TASTENBELEGUNG / CONTROLS CHEATSHEET BOX ---
+        start_y += 55
+        box_rect = pygame.Rect(center_x - 260, start_y, 520, 150)
+        pygame.draw.rect(self.screen, (30, 30, 38), box_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (100, 100, 120), box_rect, width=2, border_radius=10)
+        
+        box_title = self.label_font.render("--- Tastenbelegung & Steuerung ---", True, ORANGE)
+        self.screen.blit(box_title, (center_x - box_title.get_width() // 2, start_y + 10))
+        
+        controls = [
+            "Pfeiltasten / A, D  :  Paddle nach Links / Rechts bewegen",
+            "W / Leertaste        :  Ball starten / Laser schießen",
+            "P / ESC               :  Pause umschalten",
+            "M                       :  Audio stummschalten (Mute)",
+            "F11 / Alt+Enter   :  Vollbildmodus umschalten",
+            "C, L, S (Editor)    :  Raster zentrieren (C), Level laden (L), Speichern (S)"
+        ]
+        
+        for idx, ctrl in enumerate(controls):
+            txt = self.small_font.render(ctrl, True, (220, 220, 220))
+            self.screen.blit(txt, (box_rect.x + 25, start_y + 36 + idx * 18))
+
+        # --- 5. ZURÜCK BUTTON ---
+        self.back_btn = pygame.Rect(center_x - 100, sh - 65, 200, 45)
+        col_back = (100, 100, 100) if self.back_btn.collidepoint(mouse_pos) else (60, 60, 60)
+        pygame.draw.rect(self.screen, col_back, self.back_btn, border_radius=8)
+        pygame.draw.rect(self.screen, WHITE, self.back_btn, width=2, border_radius=8)
+        
+        back_txt = self.label_font.render("Zurück", True, WHITE)
+        self.screen.blit(back_txt, (self.back_btn.centerx - back_txt.get_width() // 2, self.back_btn.centery - back_txt.get_height() // 2))
+
+    def handle_event(self, event: pygame.event.Event, sound_manager: Any) -> str | None:
+        mouse_pos = pygame.mouse.get_pos()
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.sfx_slider_rect.collidepoint(mouse_pos):
+                self.dragging_sfx = True
+                self.update_sfx(mouse_pos[0], sound_manager)
+            elif self.music_slider_rect.collidepoint(mouse_pos):
+                self.dragging_music = True
+                self.update_music(mouse_pos[0], sound_manager)
+            elif self.test_sound_btn.collidepoint(mouse_pos):
+                sound_manager.play_sound("powerup")
+                return "TEST_SOUND"
+            elif self.mute_btn.collidepoint(mouse_pos):
+                sound_manager.toggle_mute()
+                return "TOGGLE_MUTE"
+            elif self.fullscreen_btn.collidepoint(mouse_pos):
+                return "TOGGLE_FULLSCREEN"
+            elif self.back_btn.collidepoint(mouse_pos):
+                return "BACK"
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging_sfx = False
+            self.dragging_music = False
+
+        elif event.type == pygame.MOUSEMOTION:
+            if self.dragging_sfx:
+                self.update_sfx(mouse_pos[0], sound_manager)
+            elif self.dragging_music:
+                self.update_music(mouse_pos[0], sound_manager)
+
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            return "BACK"
+
+        return None
+
+    def update_sfx(self, mouse_x: int, sound_manager: Any):
+        rel = (mouse_x - self.sfx_slider_rect.x) / max(1, self.sfx_slider_rect.width)
+        val = max(0.0, min(1.0, rel))
+        sound_manager.set_sfx_volume(val)
+
+    def update_music(self, mouse_x: int, sound_manager: Any):
+        rel = (mouse_x - self.music_slider_rect.x) / max(1, self.music_slider_rect.width)
+        val = max(0.0, min(1.0, rel))
+        sound_manager.set_music_volume(val)
