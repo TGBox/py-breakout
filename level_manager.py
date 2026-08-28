@@ -41,10 +41,16 @@ class LevelManager:
         avail_width: int = screen_width - 40
         block_width: int = max(15, (avail_width - (cols - 1) * padding) // cols)
 
-        # Das Raster soll ca. 45% der Bildschirmhöhe einnehmen (bei Boss-Leveln leicht nach unten verschoben)
         offset_y = self.offset_y + (50 if boss else 0)
-        avail_height: int = int(screen_height * 0.45) - offset_y
-        block_height: int = max(12, (avail_height - (rows - 1) * padding) // rows) if rows > 0 else 30
+        max_y_allowed = screen_height - 130  # Mindestens 100px Sicherheitsabstand über dem Paddle
+        avail_height: int = max(40, max_y_allowed - offset_y)
+
+        needed_padding = (rows - 1) * padding if rows > 1 else 0
+        if avail_height - needed_padding < rows * 6 and padding > 1:
+            padding = max(1, (avail_height - rows * 6) // max(1, rows - 1))
+            needed_padding = (rows - 1) * padding if rows > 1 else 0
+
+        block_height: int = max(4, (avail_height - needed_padding) // rows) if rows > 0 else 30
 
         total_width: int = cols * block_width + (cols - 1) * padding
         offset_x: int = (screen_width - total_width) // 2

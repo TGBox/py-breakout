@@ -163,13 +163,22 @@ class Block(pygame.sprite.Sprite):
         self._update_appearance()
 
     def reposition_and_rescale(self, screen_width: int, screen_height: int, total_cols: int = 15, total_rows: int = 12):
-        self.width = screen_width // max(1, total_cols)
+        padding = 4
+        avail_w = screen_width - 40
+        self.width = max(15, (avail_w - (total_cols - 1) * padding) // max(1, total_cols))
         grid_top = 82
-        max_h = int((screen_height - grid_top - 45) * 0.95)
-        self.height = max(12, max_h // max(1, total_rows))
+        max_y_allowed = screen_height - 130
+        avail_h = max(40, max_y_allowed - grid_top)
+        needed_padding = (total_rows - 1) * padding if total_rows > 1 else 0
+        if avail_h - needed_padding < total_rows * 6 and padding > 1:
+            padding = max(1, (avail_h - total_rows * 6) // max(1, total_rows - 1))
+            needed_padding = (total_rows - 1) * padding if total_rows > 1 else 0
+        self.height = max(4, (avail_h - needed_padding) // max(1, total_rows))
         
-        new_x = self.grid_col * self.width
-        new_y = grid_top + self.grid_row * self.height
+        total_w = total_cols * self.width + (total_cols - 1) * padding
+        offset_x = (screen_width - total_w) // 2
+        new_x = offset_x + self.grid_col * (self.width + padding)
+        new_y = grid_top + self.grid_row * (self.height + padding)
         
         self.image = pygame.Surface((self.width, self.height))
         self.rect = self.image.get_rect(topleft=(new_x, new_y)) # type: ignore

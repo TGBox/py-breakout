@@ -299,6 +299,14 @@ class Game:
             self.powerups.add(p_up)
             self.all_sprites.add(p_up)
 
+    def add_effect_duration(self, effect_key: str, duration: int, max_remaining_ms: int = 30000):
+        now = pygame.time.get_ticks()
+        if effect_key in self.active_effects and self.active_effects[effect_key] > now:
+            new_expire = self.active_effects[effect_key] + duration
+        else:
+            new_expire = now + duration
+        self.active_effects[effect_key] = min(now + max_remaining_ms, new_expire)
+
     def apply_powerup(self, powerup: PowerUp):
         self.powerups_collected_count += 1
         now = pygame.time.get_ticks()
@@ -319,45 +327,51 @@ class Game:
             self.paddle.image = pygame.Surface((current_width, 15))
             self.paddle.image.fill(YELLOW) # type: ignore
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
-            self.active_effects["sticky_paddle"] = now + duration
+            self.add_effect_duration("sticky_paddle", duration, 30000)
             
         elif etype == "expand_paddle":
-            self.paddle.image = pygame.Surface((150, 15))
+            current_w = self.paddle.rect.width # type: ignore
+            new_w = min(220, max(100, current_w) + 30)
+            self.paddle.image = pygame.Surface((new_w, 15))
             color_pad = YELLOW if self.paddle_sticky else GREEN
             self.paddle.image.fill(color_pad) # type: ignore
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
-            self.active_effects["paddle_size"] = now + duration
+            self.add_effect_duration("paddle_size", duration, 30000)
             
         elif etype == "shrink_paddle":
-            self.paddle.image = pygame.Surface((60, 15))
+            current_w = self.paddle.rect.width # type: ignore
+            new_w = max(40, current_w - 20)
+            self.paddle.image = pygame.Surface((new_w, 15))
             color_pad = YELLOW if self.paddle_sticky else RED
             self.paddle.image.fill(color_pad) # type: ignore
             self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
-            self.active_effects["paddle_size"] = now + duration
+            self.add_effect_duration("paddle_size", duration, 30000)
             
         elif etype == "slow_time":
             self.time_factor = 0.6
-            self.active_effects["time_distortion"] = now + duration
+            self.add_effect_duration("time_distortion", duration, 30000)
             
         elif etype == "speed_time":
             self.time_factor = 1.4
-            self.active_effects["time_distortion"] = now + duration
+            self.add_effect_duration("time_distortion", duration, 30000)
             
         elif etype == "bigger_ball":
             for ball in self.balls: ball.set_size(14)
-            self.active_effects["ball_size"] = now + duration
+            self.add_effect_duration("ball_size", duration, 30000)
             
         elif etype == "smaller_ball":
             for ball in self.balls: ball.set_size(5)
-            self.active_effects["ball_size"] = now + duration
+            self.add_effect_duration("ball_size", duration, 30000)
             
         elif etype == "piercing_shot":
             for ball in self.balls: ball.set_piercing(True)
-            self.active_effects["piercing"] = now + duration
+            self.add_effect_duration("piercing", duration, 30000)
             
         elif etype == "multiball":
             current_balls = list(self.balls)
             for b in current_balls:
+                if len(self.balls) >= 16:
+                    break
                 new_ball = Ball(b.rect.centerx, b.rect.centery, b.speed_x * -1, b.speed_y)
                 if "ball_size" in self.active_effects: new_ball.set_size(b.radius)
                 if "piercing" in self.active_effects: new_ball.set_piercing(True)
@@ -366,24 +380,23 @@ class Game:
                 self.all_sprites.add(new_ball)
                 
         elif etype == "laser_paddle":
-            self.paddle.laser_ammo = 12  # Nerf: 12 Schuss
-            self.active_effects["laser_paddle"] = now + duration
+            self.paddle.laser_ammo = min(36, self.paddle.laser_ammo + 12)  # Max 36 Schuss
+            self.active_effects["laser_paddle"] = now + 999999999
             
         elif etype == "missile_paddle":
-            self.paddle.missile_ammo = 6  # 6 Zielsuchraketen
-            self.active_effects["missile_paddle"] = now + duration
+            self.paddle.missile_ammo = min(18, self.paddle.missile_ammo + 6)  # Max 18 Raketen
+            self.active_effects["missile_paddle"] = now + 999999999
 
         elif etype == "shield_aura":
             self.paddle.shield_active = True
-            self.active_effects["shield_aura"] = now + duration
+            self.add_effect_duration("shield_aura", duration, 30000)
             
         elif etype == "safety_net":
-            if self.safety_net:
-                self.safety_net.kill()
-            sw, sh = self.screen.get_width(), self.screen.get_height()
-            self.safety_net = SafetyNet(sw, sh)
-            self.all_sprites.add(self.safety_net)
-            self.active_effects["safety_net"] = now + duration
+            if not self.safety_net or not self.safety_net.alive():
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.safety_net = SafetyNet(sw, sh)
+                self.all_sprites.add(self.safety_net)
+            self.add_effect_duration("safety_net", duration, 30000)
 
         elif etype == "secure_border":
             if len(self.secure_borders) == 0:
@@ -391,27 +404,27 @@ class Game:
                 sb = SecureBorder(sw, sh)
                 self.secure_borders.add(sb)
                 self.all_sprites.add(sb)
-            self.active_effects["secure_border"] = now + duration + 4000
+            self.add_effect_duration("secure_border", duration + 4000, 30000)
 
         elif etype == "fireball":
             for ball in self.balls:
                 ball.set_fireball(True)
-            self.active_effects["fireball"] = now + duration
+            self.add_effect_duration("fireball", duration, 30000)
             
         elif etype == "magnet":
-            self.active_effects["magnet"] = now + duration
+            self.add_effect_duration("magnet", duration, 30000)
             
         elif etype == "score_boost":
             self.score_multiplier = 1.5
-            self.active_effects["score_modifier"] = now + duration
+            self.add_effect_duration("score_modifier", duration, 30000)
             
         elif etype == "score_drain":
             self.score_multiplier = 0.7
-            self.active_effects["score_modifier"] = now + duration
+            self.add_effect_duration("score_modifier", duration, 30000)
             
         elif etype == "inverted_controls":
             self.paddle.inverted_controls = True
-            self.active_effects["inverted_controls"] = now + duration
+            self.add_effect_duration("inverted_controls", duration, 30000)
 
     def check_timers(self):
         now = pygame.time.get_ticks()
@@ -469,12 +482,12 @@ class Game:
                 del self.active_effects["safety_net"]
 
         if "laser_paddle" in self.active_effects:
-            if now > self.active_effects["laser_paddle"] or self.paddle.laser_ammo <= 0:
+            if self.paddle.laser_ammo <= 0:
                 self.paddle.laser_ammo = 0
                 del self.active_effects["laser_paddle"]
 
         if "missile_paddle" in self.active_effects:
-            if now > self.active_effects["missile_paddle"] or self.paddle.missile_ammo <= 0:
+            if self.paddle.missile_ammo <= 0:
                 self.paddle.missile_ammo = 0
                 del self.active_effects["missile_paddle"]
             
