@@ -119,7 +119,6 @@ class Game:
             for i in range(pygame.joystick.get_count()):
                 try:
                     js = pygame.joystick.Joystick(i)
-                    js.init()
                     self.joysticks.append(js)
                     print(f"[Controller] Gamepad erkannt: {js.get_name()}")
                 except Exception as e:
@@ -252,8 +251,7 @@ class Game:
         
         diff_settings = DIFFICULTY_SETTINGS[self.difficulty]
         base_ball_speed = BALL_SPEED * float(diff_settings["ball_speed_mult"])
-        
-        start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8, speed_x=0, speed_y=-base_ball_speed)
+        start_ball = Ball(self.paddle.rect.centerx, self.paddle.rect.top - 8, speed_x=0, speed_y=-base_ball_speed) # type: ignore
         start_ball.attached = True
         self.balls.add(start_ball)
         
@@ -265,14 +263,17 @@ class Game:
 
     def reset_paddle(self):
         sw, sh = self.screen.get_width(), self.screen.get_height()
-        pos = self.paddle.rect.center if hasattr(self.paddle, 'rect') else (sw // 2, sh - 30)
+        pos = self.paddle.rect.center if hasattr(self.paddle, 'rect') else (sw // 2, sh - 30) # type: ignore
         self.paddle.image = pygame.Surface((100, 15))
-        self.paddle.image.fill(WHITE)
-        self.paddle.rect = self.paddle.image.get_rect(centerx=pos[0], bottom=sh - 30)
+        self.paddle.image.fill(WHITE) # type: ignore
+        self.paddle.rect = self.paddle.image.get_rect(centerx=pos[0], bottom=sh - 30) # type: ignore
         self.paddle.inverted_controls = False
-        self.paddle.laser_ammo = 0
-        self.paddle.missile_ammo = 0
-        self.paddle.shield_active = False
+        if "laser_paddle" not in self.active_effects:
+            self.paddle.laser_ammo = 0
+        if "missile_paddle" not in self.active_effects:
+            self.paddle.missile_ammo = 0
+        if "shield_aura" not in self.active_effects:
+            self.paddle.shield_active = False
 
     POSITIVE_EFFECTS = ["sticky_paddle", "expand_paddle", "slow_time",
                         "bigger_ball", "multiball", "piercing_shot",
@@ -310,28 +311,28 @@ class Game:
         self.sound_manager.play_sound(sound_name)
 
         color = GREEN if is_positive else RED
-        self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, etype.replace('_', ' ').upper(), color, font_size=24)
+        self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, etype.replace('_', ' ').upper(), color, font_size=24) # type: ignore
 
         if etype == "sticky_paddle":
             self.paddle_sticky = True
-            current_width = self.paddle.rect.width
+            current_width = self.paddle.rect.width # type: ignore
             self.paddle.image = pygame.Surface((current_width, 15))
-            self.paddle.image.fill(YELLOW)
-            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
+            self.paddle.image.fill(YELLOW) # type: ignore
+            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
             self.active_effects["sticky_paddle"] = now + duration
             
         elif etype == "expand_paddle":
             self.paddle.image = pygame.Surface((150, 15))
             color_pad = YELLOW if self.paddle_sticky else GREEN
-            self.paddle.image.fill(color_pad)
-            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
+            self.paddle.image.fill(color_pad) # type: ignore
+            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
             self.active_effects["paddle_size"] = now + duration
             
         elif etype == "shrink_paddle":
             self.paddle.image = pygame.Surface((60, 15))
             color_pad = YELLOW if self.paddle_sticky else RED
-            self.paddle.image.fill(color_pad)
-            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
+            self.paddle.image.fill(color_pad) # type: ignore
+            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
             self.active_effects["paddle_size"] = now + duration
             
         elif etype == "slow_time":
@@ -418,26 +419,26 @@ class Game:
         if "paddle_size" in self.active_effects and now > self.active_effects["paddle_size"]:
             self.reset_paddle()
             if self.paddle_sticky:
-                current_width = self.paddle.rect.width
+                current_width = self.paddle.rect.width # type: ignore
                 self.paddle.image = pygame.Surface((current_width, 15))
-                self.paddle.image.fill(YELLOW)
-                self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
+                self.paddle.image.fill(YELLOW) # type: ignore
+                self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
             del self.active_effects["paddle_size"]
             
         if "sticky_paddle" in self.active_effects and now > self.active_effects["sticky_paddle"]:
             self.paddle_sticky = False
-            current_width = self.paddle.rect.width
+            current_width = self.paddle.rect.width # type: ignore
             self.paddle.image = pygame.Surface((current_width, 15))
             if "paddle_size" in self.active_effects:
                 if current_width > 100:
-                    self.paddle.image.fill(GREEN)
+                    self.paddle.image.fill(GREEN) # type: ignore
                 elif current_width < 100:
-                    self.paddle.image.fill(RED)
+                    self.paddle.image.fill(RED) # type: ignore
                 else:
-                    self.paddle.image.fill(WHITE)
+                    self.paddle.image.fill(WHITE) # type: ignore
             else:
-                self.paddle.image.fill(WHITE)
-            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center)
+                self.paddle.image.fill(WHITE) # type: ignore
+            self.paddle.rect = self.paddle.image.get_rect(center=self.paddle.rect.center) # type: ignore
             del self.active_effects["sticky_paddle"]
 
         if "time_distortion" in self.active_effects and now > self.active_effects["time_distortion"]:
@@ -459,6 +460,23 @@ class Game:
         if "secure_border" in self.active_effects and now > self.active_effects["secure_border"]:
             for sb in self.secure_borders: sb.kill()
             del self.active_effects["secure_border"]
+
+        if "safety_net" in self.active_effects:
+            if now > self.active_effects["safety_net"] or not self.safety_net or not self.safety_net.alive():
+                if self.safety_net and self.safety_net.alive():
+                    self.safety_net.kill()
+                    self.safety_net = None
+                del self.active_effects["safety_net"]
+
+        if "laser_paddle" in self.active_effects:
+            if now > self.active_effects["laser_paddle"] or self.paddle.laser_ammo <= 0:
+                self.paddle.laser_ammo = 0
+                del self.active_effects["laser_paddle"]
+
+        if "missile_paddle" in self.active_effects:
+            if now > self.active_effects["missile_paddle"] or self.paddle.missile_ammo <= 0:
+                self.paddle.missile_ammo = 0
+                del self.active_effects["missile_paddle"]
             
         if "magnet" in self.active_effects and now > self.active_effects["magnet"]:
             del self.active_effects["magnet"]
@@ -471,14 +489,15 @@ class Game:
             self.paddle.inverted_controls = False
             del self.active_effects["inverted_controls"]
 
-        if "shield_aura" in self.active_effects and now > self.active_effects["shield_aura"]:
-            self.paddle.shield_active = False
-            del self.active_effects["shield_aura"]
+        if "shield_aura" in self.active_effects:
+            if now > self.active_effects["shield_aura"] or not self.paddle.shield_active:
+                self.paddle.shield_active = False
+                del self.active_effects["shield_aura"]
 
     def trigger_explosion(self, origin_block: Block):
         origin_block.kill()
-        center_x = origin_block.rect.centerx
-        center_y = origin_block.rect.centery
+        center_x = origin_block.rect.centerx # type: ignore
+        center_y = origin_block.rect.centery # type: ignore
         self.spawn_particles(center_x, center_y, ORANGE, count=25)
         self.spawn_particles(center_x, center_y, RED, count=15)
         self.add_screen_shake(6.0, 300)
@@ -515,10 +534,10 @@ class Game:
         portals = [b for b in self.blocks if b.block_type == 'T' and b != portal_block]
         if portals:
             dest_portal = random.choice(portals)
-            ball.rect.centerx = dest_portal.rect.centerx
-            ball.rect.centery = dest_portal.rect.centery + (35 if ball.speed_y > 0 else -35)
-            ball.x = float(ball.rect.x)
-            ball.y = float(ball.rect.y)
+            ball.rect.centerx = dest_portal.rect.centerx # type: ignore
+            ball.rect.centery = dest_portal.rect.centery + (35 if ball.speed_y > 0 else -35) # type: ignore
+            ball.x = float(ball.rect.x) # type: ignore
+            ball.y = float(ball.rect.y) # type: ignore
             ball.last_teleport_ticks = now
             self.sound_manager.play_sound("laser")
 
@@ -529,7 +548,7 @@ class Game:
             if ball.attached:
                 ball.attached = False
                 hit_pos = getattr(ball, "sticky_offset_x", 0)
-                relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2))) # type: ignore
                 
                 speed_mult = float(DIFFICULTY_SETTINGS[self.difficulty]["ball_speed_mult"])
                 BALL_TEMPO = BALL_SPEED * speed_mult
@@ -545,25 +564,29 @@ class Game:
             if now - self.paddle.last_shot_ticks >= 300:
                 self.paddle.last_shot_ticks = now
                 self.paddle.laser_ammo -= 1
-                l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6)
-                l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6)
+                l1 = LaserProjectile(self.paddle.rect.left + 8, self.paddle.rect.top - 6) # type: ignore
+                l2 = LaserProjectile(self.paddle.rect.right - 8, self.paddle.rect.top - 6) # type: ignore
                 self.lasers.add(l1, l2)
                 self.all_sprites.add(l1, l2)
                 self.sound_manager.play_sound("laser")
                 if self.paddle.laser_ammo <= 0:
-                    del self.active_effects["laser_paddle"]
+                    self.paddle.laser_ammo = 0
+                    if "laser_paddle" in self.active_effects:
+                        del self.active_effects["laser_paddle"]
 
         # --- HOMING MISSILE LAUNCHER ---
         if "missile_paddle" in self.active_effects and self.paddle.missile_ammo > 0:
             if now - self.paddle.last_shot_ticks >= 300:
                 self.paddle.last_shot_ticks = now
                 self.paddle.missile_ammo -= 1
-                m = HomingMissile(self.paddle.rect.centerx, self.paddle.rect.top - 6)
+                m = HomingMissile(self.paddle.rect.centerx, self.paddle.rect.top - 6) # type: ignore
                 self.missiles.add(m)
                 self.all_sprites.add(m)
                 self.sound_manager.play_sound("missile_launch")
                 if self.paddle.missile_ammo <= 0:
-                    del self.active_effects["missile_paddle"]
+                    self.paddle.missile_ammo = 0
+                    if "missile_paddle" in self.active_effects:
+                        del self.active_effects["missile_paddle"]
 
     def calculate_score(self, elapsed_seconds: float | None = None) -> int:
         base_score = 10000
@@ -599,7 +622,7 @@ class Game:
         ]
         
         if self.state == STATE_PLAYING:
-            self.paddle.rect.bottom = sh - 30
+            self.paddle.rect.bottom = sh - 30 # type: ignore
             
             for block in self.blocks:
                 if hasattr(block, 'reposition_and_rescale'):
@@ -611,9 +634,9 @@ class Game:
                     
             if self.safety_net and self.safety_net.alive():
                 self.safety_net.image = pygame.Surface((sw, 8))
-                self.safety_net.image.fill((0, 220, 255))
-                pygame.draw.rect(self.safety_net.image, WHITE, (0, 0, sw, 8), 1)
-                self.safety_net.rect = self.safety_net.image.get_rect(topleft=(0, sh - 12))
+                self.safety_net.image.fill((0, 220, 255)) # type: ignore
+                pygame.draw.rect(self.safety_net.image, WHITE, (0, 0, sw, 8), 1) # type: ignore
+                self.safety_net.rect = self.safety_net.image.get_rect(topleft=(0, sh - 12)) # type: ignore
                 
             for sb in self.secure_borders:
                 sb.image = pygame.Surface((sw, 8))
@@ -1058,21 +1081,21 @@ class Game:
             if "magnet" in self.active_effects:
                 for ball in self.balls:
                     if not ball.attached:
-                        if ball.rect.centerx < self.paddle.rect.centerx:
+                        if ball.rect.centerx < self.paddle.rect.centerx: # type: ignore
                             ball.speed_x += 0.1
-                        elif ball.rect.centerx > self.paddle.rect.centerx:
+                        elif ball.rect.centerx > self.paddle.rect.centerx: # type: ignore
                             ball.speed_x -= 0.1
                 for p_up in self.powerups:
-                    if p_up.rect.centerx < self.paddle.rect.centerx:
+                    if p_up.rect.centerx < self.paddle.rect.centerx: # type: ignore
                         p_up.rect.x += 1
-                    elif p_up.rect.centerx > self.paddle.rect.centerx:
+                    elif p_up.rect.centerx > self.paddle.rect.centerx: # type: ignore
                         p_up.rect.x -= 1
             
             for ball in self.balls:
                 if ball.attached:
                     offset = getattr(ball, "sticky_offset_x", 0)
-                    ball.rect.centerx = self.paddle.rect.centerx + offset
-                    ball.rect.bottom = self.paddle.rect.top
+                    ball.rect.centerx = self.paddle.rect.centerx + offset # type: ignore
+                    ball.rect.bottom = self.paddle.rect.top # type: ignore
                     ball.x = float(ball.rect.x)
                     ball.y = float(ball.rect.y)
 
@@ -1109,12 +1132,12 @@ class Game:
                 if self.paddle.shield_active:
                     self.paddle.shield_active = False
                     self.sound_manager.play_sound("shield_hit")
-                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "SHIELD ABSORBED!", CYAN)
+                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "SHIELD ABSORBED!", CYAN) # type: ignore
                 else:
                     self.paddle.stun(1500)
-                    self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15)
+                    self.spawn_particles(self.paddle.rect.centerx, self.paddle.rect.top, YELLOW, count=15) # type: ignore
                     self.add_screen_shake(4.0, 200)
-                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24)
+                    self.spawn_floating_text(self.paddle.rect.centerx, self.paddle.rect.top - 10, "STUNNED!", RED, font_size=24) # type: ignore
                     self.sound_manager.play_sound("paddle_stun")
                     self.score_multiplier = max(0.5, self.score_multiplier - 0.1)
 
@@ -1197,13 +1220,13 @@ class Game:
                     self.sound_manager.play_sound("paddle_hit")
                     if self.paddle_sticky:
                         ball.attached = True
-                        ball.sticky_offset_x = ball.rect.centerx - self.paddle.rect.centerx
-                        ball.rect.bottom = self.paddle.rect.top
+                        ball.sticky_offset_x = ball.rect.centerx - self.paddle.rect.centerx # type: ignore
+                        ball.rect.bottom = self.paddle.rect.top # type: ignore
                         ball.x = float(ball.rect.x)
                         ball.y = float(ball.rect.y)
                     else:
-                        hit_pos = ball.rect.centerx - self.paddle.rect.centerx
-                        relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2)))
+                        hit_pos = ball.rect.centerx - self.paddle.rect.centerx # type: ignore
+                        relative_hit = max(-1.0, min(1.0, hit_pos / (self.paddle.rect.width / 2))) # type: ignore
                         
                         if abs(relative_hit) < 0.1:
                             relative_hit = random.choice([-0.15, 0.15])
@@ -1257,7 +1280,7 @@ class Game:
                         self.sound_manager.play_sound("shield_hit")
                         self.spawn_floating_text(ball.rect.centerx, sh - 40, "SHIELD SAVED BALL!", CYAN)
                     elif self.safety_net and self.safety_net.alive():
-                        ball.rect.bottom = self.safety_net.rect.top
+                        ball.rect.bottom = self.safety_net.rect.top # type: ignore
                         ball.y = float(ball.rect.y)
                         ball.speed_y = -abs(ball.speed_y)
                         self.safety_net.kill()
