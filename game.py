@@ -723,6 +723,15 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+
+            if hasattr(pygame, "WINDOWFOCUSLOST") and event.type == pygame.WINDOWFOCUSLOST:
+                if self.state == STATE_PLAYING:
+                    self.state = STATE_PAUSED
+                    self.sound_manager.stop_bgm()
+            elif event.type == pygame.ACTIVEEVENT and getattr(event, "gain", 1) == 0:
+                if self.state == STATE_PLAYING:
+                    self.state = STATE_PAUSED
+                    self.sound_manager.stop_bgm()
             
             if event.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
                 self.init_joysticks()
@@ -1007,6 +1016,16 @@ class Game:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.state = STATE_MENU
                     pygame.display.set_caption(TITLE)
+
+        self.update_mouse_grab()
+
+    def update_mouse_grab(self):
+        should_grab = (self.state == STATE_PLAYING and self.mouse_control_enabled)
+        try:
+            if pygame.event.get_grab() != should_grab:
+                pygame.event.set_grab(should_grab)
+        except Exception:
+            pass
 
     def handle_controller_nav(self, d_x: int, d_y: int):
         now = pygame.time.get_ticks()
