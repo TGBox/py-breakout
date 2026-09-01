@@ -274,10 +274,11 @@ class SettingsMenu:
         self.test_sound_btn = pygame.Rect(0, 0, 160, 36)
         self.mute_btn = pygame.Rect(0, 0, 160, 36)
         self.fullscreen_btn = pygame.Rect(0, 0, 160, 36)
+        self.mouse_btn = pygame.Rect(0, 0, 160, 36)
         self.back_btn = pygame.Rect(0, 0, 200, 45)
 
     def navigate_row(self, delta: int):
-        self.selected_row = (self.selected_row + delta) % 6
+        self.selected_row = (self.selected_row + delta) % 7
 
     def adjust_slider(self, delta: float, sound_manager: Any):
         if self.selected_row == 0:
@@ -297,18 +298,20 @@ class SettingsMenu:
         elif self.selected_row == 4:
             return "TOGGLE_FULLSCREEN"
         elif self.selected_row == 5:
+            return "TOGGLE_MOUSE_CONTROL"
+        elif self.selected_row == 6:
             return "BACK"
         return None
 
-    def draw(self, sound_manager: Any, difficulty: str, is_fullscreen: bool):
+    def draw(self, sound_manager: Any, difficulty: str, is_fullscreen: bool, mouse_control_enabled: bool = True):
         sw, sh = self.screen.get_width(), self.screen.get_height()
         center_x = sw // 2
         
         title_surf = self.title_font.render("EINSTELLUNGEN & AUDIO", True, YELLOW)
-        self.screen.blit(title_surf, (center_x - title_surf.get_width() // 2, 35))
+        self.screen.blit(title_surf, (center_x - title_surf.get_width() // 2, 30))
         
-        start_y = 105
-        spacing = 55
+        start_y = 95
+        spacing = 50
         slider_w = 240
         mouse_pos = pygame.mouse.get_pos()
         
@@ -349,12 +352,12 @@ class SettingsMenu:
         knob_mx = self.music_slider_rect.x + fill_m
         pygame.draw.circle(self.screen, border_mcol, (knob_mx, self.music_slider_rect.centery), 11)
 
-        # --- 3. TOGGLE & TEST BUTTONS ---
-        start_y += spacing + 10
-        btn_w, btn_h = 160, 36
+        # --- 3. TOGGLE & TEST BUTTONS (Zeile 1: Sound Test, Mute) ---
+        start_y += spacing + 5
+        btn_w, btn_h = 160, 34
         
         # Sound Test Button
-        self.test_sound_btn = pygame.Rect(center_x - 230, start_y, btn_w, btn_h)
+        self.test_sound_btn = pygame.Rect(center_x - 170, start_y, btn_w, btn_h)
         is_test_foc = (self.selected_row == 2)
         col_test = (60, 120, 180) if not is_test_foc and not self.test_sound_btn.collidepoint(mouse_pos) else (80, 150, 220)
         pygame.draw.rect(self.screen, col_test, self.test_sound_btn, border_radius=6)
@@ -363,7 +366,7 @@ class SettingsMenu:
         self.screen.blit(txt_test, (self.test_sound_btn.centerx - txt_test.get_width() // 2, self.test_sound_btn.centery - txt_test.get_height() // 2))
 
         # Mute Toggle Button
-        self.mute_btn = pygame.Rect(center_x - 55, start_y, btn_w, btn_h)
+        self.mute_btn = pygame.Rect(center_x + 10, start_y, btn_w, btn_h)
         is_mute_foc = (self.selected_row == 3)
         col_mute = (160, 50, 50) if sound_manager.muted else ((50, 140, 50) if not is_mute_foc and not self.mute_btn.collidepoint(mouse_pos) else (70, 180, 70))
         pygame.draw.rect(self.screen, col_mute, self.mute_btn, border_radius=6)
@@ -371,8 +374,10 @@ class SettingsMenu:
         txt_mute = self.small_font.render("Ton: STUMM" if sound_manager.muted else "Ton: AKTIV", True, WHITE)
         self.screen.blit(txt_mute, (self.mute_btn.centerx - txt_mute.get_width() // 2, self.mute_btn.centery - txt_mute.get_height() // 2))
 
+        # --- TOGGLE BUTTONS (Zeile 2: Vollbild, Maussteuerung) ---
+        start_y += 42
         # Vollbild Toggle Button
-        self.fullscreen_btn = pygame.Rect(center_x + 120, start_y, btn_w, btn_h)
+        self.fullscreen_btn = pygame.Rect(center_x - 170, start_y, btn_w, btn_h)
         is_fs_foc = (self.selected_row == 4)
         col_fs = (0, 130, 140) if not is_fs_foc and not self.fullscreen_btn.collidepoint(mouse_pos) else (0, 170, 180)
         pygame.draw.rect(self.screen, col_fs, self.fullscreen_btn, border_radius=6)
@@ -380,31 +385,43 @@ class SettingsMenu:
         txt_fs = self.small_font.render("Vollbild: AN" if is_fullscreen else "Vollbild: AUS", True, WHITE)
         self.screen.blit(txt_fs, (self.fullscreen_btn.centerx - txt_fs.get_width() // 2, self.fullscreen_btn.centery - txt_fs.get_height() // 2))
 
+        # Maussteuerung Toggle Button
+        self.mouse_btn = pygame.Rect(center_x + 10, start_y, btn_w, btn_h)
+        is_mouse_foc = (self.selected_row == 5)
+        col_mouse = (140, 90, 0) if mouse_control_enabled else (70, 70, 80)
+        if is_mouse_foc or self.mouse_btn.collidepoint(mouse_pos):
+            col_mouse = (180, 120, 0) if mouse_control_enabled else (90, 90, 105)
+        pygame.draw.rect(self.screen, col_mouse, self.mouse_btn, border_radius=6)
+        pygame.draw.rect(self.screen, YELLOW if is_mouse_foc else WHITE, self.mouse_btn, width=3 if is_mouse_foc else 2, border_radius=6)
+        txt_mouse = self.small_font.render("Maus: AN" if mouse_control_enabled else "Maus: AUS", True, WHITE)
+        self.screen.blit(txt_mouse, (self.mouse_btn.centerx - txt_mouse.get_width() // 2, self.mouse_btn.centery - txt_mouse.get_height() // 2))
+
         # --- 4. TASTENBELEGUNG / CONTROLS CHEATSHEET BOX ---
-        start_y += 55
-        box_rect = pygame.Rect(center_x - 260, start_y, 520, 150)
+        start_y += 48
+        box_rect = pygame.Rect(center_x - 260, start_y, 520, 160)
         pygame.draw.rect(self.screen, (30, 30, 38), box_rect, border_radius=10)
         pygame.draw.rect(self.screen, (100, 100, 120), box_rect, width=2, border_radius=10)
         
-        box_title = self.label_font.render("--- Tastenbelegung & Steuerung ---", True, ORANGE)
-        self.screen.blit(box_title, (center_x - box_title.get_width() // 2, start_y + 10))
+        box_title = self.label_font.render("--- Steuerung & Tastenbelegung ---", True, ORANGE)
+        self.screen.blit(box_title, (center_x - box_title.get_width() // 2, start_y + 8))
         
         controls = [
-            "Pfeiltasten / Stick  :  Paddle bewegen / Menü navigieren",
-            "Leertaste / Button A :  Ball starten / Laser feuern / Auswählen",
-            "P / Button Start     :  Pause umschalten",
-            "M / Button LB/RB     :  Audio stummschalten (Mute)",
-            "F11 / Alt+Enter      :  Vollbildmodus umschalten",
-            "C, L, S (Editor)     :  Raster zentrieren (C), Level laden (L), Speichern (S)"
+            "Maus / Pfeiltasten / Stick : Paddle bewegen / Menü navigieren",
+            "Linksklick / Leertaste / A  : Ball starten / Laser-Kanonen feuern",
+            "Rechtsklick                 : Homing Missiles (Raketen) feuern",
+            "P / Button Start            : Pause umschalten",
+            "M / Button LB/RB            : Audio stummschalten (Mute)",
+            "F11 / Alt+Enter             : Vollbildmodus umschalten",
+            "C, L, S (Editor)            : Raster zentrieren (C), Level laden (L), Speichern (S)"
         ]
         
         for idx, ctrl in enumerate(controls):
             txt = self.small_font.render(ctrl, True, (220, 220, 220))
-            self.screen.blit(txt, (box_rect.x + 25, start_y + 36 + idx * 18))
+            self.screen.blit(txt, (box_rect.x + 20, start_y + 32 + idx * 17))
 
         # --- 5. ZURÜCK BUTTON ---
-        self.back_btn = pygame.Rect(center_x - 100, sh - 65, 200, 45)
-        is_back_foc = (self.selected_row == 5)
+        self.back_btn = pygame.Rect(center_x - 100, sh - 55, 200, 42)
+        is_back_foc = (self.selected_row == 6)
         col_back = (100, 100, 100) if is_back_foc or self.back_btn.collidepoint(mouse_pos) else (60, 60, 60)
         pygame.draw.rect(self.screen, col_back, self.back_btn, border_radius=8)
         pygame.draw.rect(self.screen, YELLOW if is_back_foc else WHITE, self.back_btn, width=3 if is_back_foc else 2, border_radius=8)
@@ -435,8 +452,11 @@ class SettingsMenu:
             elif self.fullscreen_btn.collidepoint(mouse_pos):
                 self.selected_row = 4
                 return "TOGGLE_FULLSCREEN"
-            elif self.back_btn.collidepoint(mouse_pos):
+            elif self.mouse_btn.collidepoint(mouse_pos):
                 self.selected_row = 5
+                return "TOGGLE_MOUSE_CONTROL"
+            elif self.back_btn.collidepoint(mouse_pos):
+                self.selected_row = 6
                 return "BACK"
 
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
