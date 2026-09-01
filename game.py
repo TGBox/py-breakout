@@ -50,6 +50,7 @@ class Game:
         self.unlocked_level = 1
         self.difficulty = DIFFICULTY_NORMAL
         self.highscores: dict[str, list[dict[str, Any]]] = {}
+        self.mouse_control_enabled: bool = True
         
         # Unified Save & Load
         self.load_game_data()
@@ -158,6 +159,7 @@ class Game:
                     self.unlocked_level = data.get("unlocked_level", 1)
                     self.difficulty = data.get("difficulty", DIFFICULTY_NORMAL)
                     self.highscores = data.get("highscores", {})
+                    self.mouse_control_enabled = data.get("mouse_control_enabled", True)
                     
                     self.sound_manager.muted = data.get("sound_muted", False)
                     self.sound_manager.sfx_volume = data.get("sfx_volume", 0.8)
@@ -177,6 +179,7 @@ class Game:
             "unlocked_level": self.unlocked_level,
             "difficulty": self.difficulty,
             "highscores": self.highscores,
+            "mouse_control_enabled": self.mouse_control_enabled,
             "sound_muted": self.sound_manager.muted,
             "sfx_volume": self.sound_manager.sfx_volume,
             "music_volume": self.sound_manager.music_volume
@@ -522,7 +525,7 @@ class Game:
             ball.last_teleport_ticks = now
             self.sound_manager.play_sound("laser")
 
-    def launch_ball_or_laser(self):
+    def launch_ball_or_laser(self, fire_laser: bool = True, fire_missile: bool = True):
         """Startet klebende Bälle, feuert Laser-Kanonen (mit Nerf/Ammo) oder Homing Missiles."""
         now = pygame.time.get_ticks()
         for ball in self.balls:
@@ -541,7 +544,7 @@ class Game:
                 self.sound_manager.play_sound("paddle_hit")
 
         # --- LASER NERF: 300ms Cooldown & Munitionsabzug ---
-        if "laser_paddle" in self.active_effects and self.paddle.laser_ammo > 0:
+        if fire_laser and "laser_paddle" in self.active_effects and self.paddle.laser_ammo > 0:
             if now - self.paddle.last_shot_ticks >= 300:
                 self.paddle.last_shot_ticks = now
                 self.paddle.laser_ammo -= 1
@@ -554,7 +557,7 @@ class Game:
                     del self.active_effects["laser_paddle"]
 
         # --- HOMING MISSILE LAUNCHER ---
-        if "missile_paddle" in self.active_effects and self.paddle.missile_ammo > 0:
+        if fire_missile and "missile_paddle" in self.active_effects and self.paddle.missile_ammo > 0:
             if now - self.paddle.last_shot_ticks >= 300:
                 self.paddle.last_shot_ticks = now
                 self.paddle.missile_ammo -= 1
@@ -817,6 +820,9 @@ class Game:
                 elif act == "TOGGLE_FULLSCREEN":
                     self.toggle_fullscreen()
                     self.save_game_data()
+                elif act == "TOGGLE_MOUSE_CONTROL":
+                    self.mouse_control_enabled = not self.mouse_control_enabled
+                    self.save_game_data()
 
             elif self.state == STATE_LEVEL_SELECT:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -871,6 +877,11 @@ class Game:
                         self.state = STATE_MENU
 
             elif self.state == STATE_PLAYING:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        self.launch_ball_or_laser(fire_laser=True, fire_missile=False)
+                    elif event.button == 3:
+                        self.launch_ball_or_laser(fire_laser=False, fire_missile=True)
                 if event.type == pygame.KEYDOWN:
                     if event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_w):
                         self.launch_ball_or_laser()
@@ -1091,7 +1102,8 @@ class Game:
                 except Exception:
                     pass
 
-            self.paddle.update(sw, controller_move_x=ctrl_x)
+            mouse_x = pygame.mouse.get_pos()[0]
+            self.paddle.update(sw, controller_move_x=ctrl_x, mouse_x=mouse_x, mouse_control_enabled=self.mouse_control_enabled)
             self.powerups.update(sh)
             self.blocks.update()
             self.lasers.update()
@@ -1464,7 +1476,7 @@ class Game:
             self.screen.blit(txt_men, (self.pause_menu_rect.centerx - txt_men.get_width() // 2, self.pause_menu_rect.centery - txt_men.get_height() // 2))
 
         elif self.state == STATE_SETTINGS:
-            self.settings_menu.draw(self.sound_manager, self.difficulty, self.is_fullscreen)
+            self.settings_menu.draw(self.sound_manager, self.difficulty, self.is_fullscreen, self.mouse_control_enabled)
 
         elif self.state in (STATE_LEVEL_CLEARED, STATE_ALL_CLEARED):
             self.particles.draw(self.screen)
